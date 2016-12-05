@@ -1,5 +1,5 @@
-spatiocyte-cuda
-===============
+spatiocyte-cuda-novoxels
+========================
 
 A CUDA standalone Spatiocyte package (no voxels version).
 
