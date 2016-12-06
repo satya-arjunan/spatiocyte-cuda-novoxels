@@ -44,7 +44,9 @@ Diffuser::Diffuser(const double D, Species& species):
   species_(species),
   compartment_(species_.get_compartment()),
   mols_(species_.get_mols()),
-  offsets_(species_.get_compartment().get_offsets()),
+  offsets_(compartment_.get_offsets()),
+  randoms_(compartment_.get_model().get_randoms()),
+  randoms_counter_(compartment_.get_model().get_randoms_counter()),
   species_id_(species_.get_id()),
   vac_id_(species_.get_vac_id()),
   null_id_(species_.get_model().get_null_id()),
@@ -115,16 +117,15 @@ void concurrent_walk(
     const voxel_t null_id_,
     const umol_t num_voxels_,
     umol_t* mols_,
-    const mol_t* offsets_) {
+    const mol_t* offsets_,
+    const float* randoms_) {
   //index is the unique global thread id (size: total_threads)
   unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
   const unsigned total_threads(blockDim.x*gridDim.x);
   while(index < mol_size_) {
     const umol_t vdx(mols_[index]);
-    thrust::default_random_engine rng;
-    rng.discard(seed_+index);
-    thrust::uniform_int_distribution<unsigned> u(0, 11);
-    const unsigned rand(u(rng));
+    float ranf(randoms_[index]*11.999999);
+    const unsigned rand((unsigned)truncf(ranf));
     const unsigned lay(vdx/NUM_COLROW);
     const unsigned col(vdx%NUM_COLROW/NUM_ROW);
     const bool odd_lay(lay&1);
@@ -141,6 +142,10 @@ void concurrent_walk(
 
 void Diffuser::walk() {
   const size_t size(mols_.size());
+  if(randoms_counter_ > compartment_.get_model().get_randoms_size()-size) {
+    compartment_.get_model().generate_randoms();
+    randoms_counter_ = 0;
+  }
   concurrent_walk<<<blocks_, 512>>>(
       size,
       seed_,
@@ -150,7 +155,9 @@ void Diffuser::walk() {
       null_id_,
       num_voxels_,
       thrust::raw_pointer_cast(&mols_[0]),
-      thrust::raw_pointer_cast(&offsets_[0]));
+      thrust::raw_pointer_cast(&offsets_[0]),
+      thrust::raw_pointer_cast(&randoms_[randoms_counter_]));
+  randoms_counter_ += size;
   //barrier cudaDeviceSynchronize() is not needed here since all work will be
   //queued in the stream sequentially by the CPU to be executed by GPU.
   //kernel1<<<X,Y>>>(...); // kernel start execution, CPU continues to next
@@ -159,6 +166,70 @@ void Diffuser::walk() {
                            // kernel1 finishes, CPU continues to next statement
   //cudaMemcpy(...); // CPU blocks until ememory is copied, memory copy starts
                      // only after kernel2 finishes
-  seed_ += size;
+
 }
+
+/* curand random generation: 4.1 s
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const unsigned seed_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* mols_,
+    const mol_t* offsets_,
+    const float* randoms_) {
+  //index is the unique global thread id (size: total_threads)
+  unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
+  const unsigned total_threads(blockDim.x*gridDim.x);
+  while(index < mol_size_) {
+    const umol_t vdx(mols_[index]);
+    float ranf(randoms_[index]*11.999999);
+    const unsigned rand((unsigned)truncf(ranf));
+    const unsigned lay(vdx/NUM_COLROW);
+    const unsigned col(vdx%NUM_COLROW/NUM_ROW);
+    const bool odd_lay(lay&1);
+    const bool odd_col(col&1);
+    mol2_t val(mol2_t(vdx)+offsets_[rand+(24&(-odd_lay))+(12&(-odd_col))]);
+    if(val < num_voxels_) {
+      mols_[index] = val;
+    }
+    //Do nothing, stay at original position
+    index += total_threads;
+  }
+  //__syncthreads();
+}
+
+void Diffuser::walk() {
+  const size_t size(mols_.size());
+  if(randoms_counter_ > compartment_.get_model().get_randoms_size()-size) {
+    compartment_.get_model().generate_randoms();
+    randoms_counter_ = 0;
+  }
+  concurrent_walk<<<blocks_, 512>>>(
+      size,
+      seed_,
+      stride_,
+      id_stride_,
+      vac_id_,
+      null_id_,
+      num_voxels_,
+      thrust::raw_pointer_cast(&mols_[0]),
+      thrust::raw_pointer_cast(&offsets_[0]),
+      thrust::raw_pointer_cast(&randoms_[randoms_counter_]));
+  randoms_counter_ += size;
+  //barrier cudaDeviceSynchronize() is not needed here since all work will be
+  //queued in the stream sequentially by the CPU to be executed by GPU.
+  //kernel1<<<X,Y>>>(...); // kernel start execution, CPU continues to next
+                           // statement
+  //kernel2<<<X,Y>>>(...); // kernel is placed in queue and will start after
+                           // kernel1 finishes, CPU continues to next statement
+  //cudaMemcpy(...); // CPU blocks until ememory is copied, memory copy starts
+                     // only after kernel2 finishes
+
+}
+*/
 

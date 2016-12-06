@@ -32,15 +32,18 @@
 #ifndef __Model_hpp
 #define __Model_hpp
 
+
 #include <Common.hpp>
 #include <Compartment.hpp>
 #include <Stepper.hpp>
+#include <thrust/device_vector.h>
+#include <curand.h>
 #include <sstream>
 
 class Model {
  public: 
   Model();
-  ~Model() {}
+  ~Model();
   void initialize();
   unsigned run(const double);
   unsigned push_species(Species&);
@@ -49,12 +52,20 @@ class Model {
   std::vector<Species*>& get_species();
   voxel_t get_null_id() const;
   voxel_t get_stride() const;
+  thrust::device_vector<float>& get_randoms();
+  unsigned get_randoms_size() const;
+  unsigned& get_randoms_counter();
+  void generate_randoms();
  private:
   std::vector<Species*> species_;
   const voxel_t null_id_;
+  const unsigned randoms_size_;
+  unsigned randoms_counter_;
   Stepper stepper_;
   Compartment compartment_; //must declare this at the end after initializing others
   voxel_t stride_;
+  curandGenerator_t random_generator_;
+  thrust::device_vector<float> randoms_;
 };
 
 #endif /* __Model_hpp */

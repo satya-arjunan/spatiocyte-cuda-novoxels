@@ -50,11 +50,13 @@ private:
   Compartment& compartment_;
   thrust::device_vector<umol_t>& mols_;
   thrust::device_vector<mol_t>& offsets_;
+  thrust::device_vector<float>& randoms_;
   const voxel_t species_id_;
   const voxel_t vac_id_;
   const voxel_t null_id_;
   unsigned seed_;
   unsigned blocks_;
+  unsigned& randoms_counter_;
   voxel_t stride_;
   voxel_t id_stride_;
   umol_t num_voxels_;
