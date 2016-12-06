@@ -107,6 +107,40 @@ double Diffuser::get_D() const {
    980 GTX: multiProcessorCount = 16
 */
 
+__device__
+unsigned get_tar(
+    const unsigned vdx,
+    const unsigned nrand) {
+  const bool odd_col((vdx%NUM_COLROW/NUM_ROW)&1);
+  const bool odd_lay((vdx/NUM_COLROW)&1);
+  switch(nrand)
+    {
+    case 1:
+      return vdx+1;
+    case 2:
+      return vdx+(odd_col^odd_lay)-NUM_ROW-1 ;
+    case 3:
+      return vdx+(odd_col^odd_lay)-NUM_ROW;
+    case 4:
+      return vdx+(odd_col^odd_lay)+NUM_ROW-1;
+    case 5:
+      return vdx+(odd_col^odd_lay)+NUM_ROW;
+    case 6:
+      return vdx+NUM_ROW*(odd_lay-NUM_COL-1)-(odd_col&odd_lay);
+    case 7:
+      return vdx+!odd_col*(odd_lay-!odd_lay)-NUM_COLROW;
+    case 8:
+      return vdx+NUM_ROW*(odd_lay-NUM_COL)+(odd_col&!odd_lay);
+    case 9:
+      return vdx+NUM_ROW*(NUM_COL-!odd_lay)-(odd_col&odd_lay);
+    case 10:
+      return vdx+NUM_COLROW+!odd_col*(odd_lay-!odd_lay);
+    case 11:
+      return vdx+NUM_ROW*(NUM_COL+odd_lay)+(odd_col&!odd_lay);
+    }
+  return vdx-1;
+}
+
 __global__
 void concurrent_walk(
     const unsigned mol_size_,
@@ -117,7 +151,6 @@ void concurrent_walk(
     const voxel_t null_id_,
     const umol_t num_voxels_,
     umol_t* mols_,
-    const mol_t* offsets_,
     const float* randoms_) {
   //index is the unique global thread id (size: total_threads)
   unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
@@ -126,11 +159,7 @@ void concurrent_walk(
     const umol_t vdx(mols_[index]);
     float ranf(randoms_[index]*11.999999);
     const unsigned rand((unsigned)truncf(ranf));
-    const unsigned lay(vdx/NUM_COLROW);
-    const unsigned col(vdx%NUM_COLROW/NUM_ROW);
-    const bool odd_lay(lay&1);
-    const bool odd_col(col&1);
-    mol2_t val(mol2_t(vdx)+offsets_[rand+(24&(-odd_lay))+(12&(-odd_col))]);
+    mol2_t val(get_tar(vdx, rand));
     if(val < num_voxels_) {
       mols_[index] = val;
     }
@@ -155,7 +184,6 @@ void Diffuser::walk() {
       null_id_,
       num_voxels_,
       thrust::raw_pointer_cast(&mols_[0]),
-      thrust::raw_pointer_cast(&offsets_[0]),
       thrust::raw_pointer_cast(&randoms_[randoms_counter_]));
   randoms_counter_ += size;
   //barrier cudaDeviceSynchronize() is not needed here since all work will be
@@ -168,6 +196,98 @@ void Diffuser::walk() {
                      // only after kernel2 finishes
 
 }
+
+/* Without offsets: 3.0 s
+__device__
+unsigned get_tar(
+    const unsigned vdx,
+    const unsigned nrand) {
+  const bool odd_col((vdx%NUM_COLROW/NUM_ROW)&1);
+  const bool odd_lay((vdx/NUM_COLROW)&1);
+  switch(nrand)
+    {
+    case 1:
+      return vdx+1;
+    case 2:
+      return vdx+(odd_col^odd_lay)-NUM_ROW-1 ;
+    case 3:
+      return vdx+(odd_col^odd_lay)-NUM_ROW;
+    case 4:
+      return vdx+(odd_col^odd_lay)+NUM_ROW-1;
+    case 5:
+      return vdx+(odd_col^odd_lay)+NUM_ROW;
+    case 6:
+      return vdx+NUM_ROW*(odd_lay-NUM_COL-1)-(odd_col&odd_lay);
+    case 7:
+      return vdx+!odd_col*(odd_lay-!odd_lay)-NUM_COLROW;
+    case 8:
+      return vdx+NUM_ROW*(odd_lay-NUM_COL)+(odd_col&!odd_lay);
+    case 9:
+      return vdx+NUM_ROW*(NUM_COL-!odd_lay)-(odd_col&odd_lay);
+    case 10:
+      return vdx+NUM_COLROW+!odd_col*(odd_lay-!odd_lay);
+    case 11:
+      return vdx+NUM_ROW*(NUM_COL+odd_lay)+(odd_col&!odd_lay);
+    }
+  return vdx-1;
+}
+
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const unsigned seed_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* mols_,
+    const float* randoms_) {
+  //index is the unique global thread id (size: total_threads)
+  unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
+  const unsigned total_threads(blockDim.x*gridDim.x);
+  while(index < mol_size_) {
+    const umol_t vdx(mols_[index]);
+    float ranf(randoms_[index]*11.999999);
+    const unsigned rand((unsigned)truncf(ranf));
+    mol2_t val(get_tar(vdx, rand));
+    if(val < num_voxels_) {
+      mols_[index] = val;
+    }
+    //Do nothing, stay at original position
+    index += total_threads;
+  }
+  //__syncthreads();
+}
+
+void Diffuser::walk() {
+  const size_t size(mols_.size());
+  if(randoms_counter_ > compartment_.get_model().get_randoms_size()-size) {
+    compartment_.get_model().generate_randoms();
+    randoms_counter_ = 0;
+  }
+  concurrent_walk<<<blocks_, 512>>>(
+      size,
+      seed_,
+      stride_,
+      id_stride_,
+      vac_id_,
+      null_id_,
+      num_voxels_,
+      thrust::raw_pointer_cast(&mols_[0]),
+      thrust::raw_pointer_cast(&randoms_[randoms_counter_]));
+  randoms_counter_ += size;
+  //barrier cudaDeviceSynchronize() is not needed here since all work will be
+  //queued in the stream sequentially by the CPU to be executed by GPU.
+  //kernel1<<<X,Y>>>(...); // kernel start execution, CPU continues to next
+                           // statement
+  //kernel2<<<X,Y>>>(...); // kernel is placed in queue and will start after
+                           // kernel1 finishes, CPU continues to next statement
+  //cudaMemcpy(...); // CPU blocks until ememory is copied, memory copy starts
+                     // only after kernel2 finishes
+
+}
+*/
 
 /* curand random generation: 4.1 s
 __global__
