@@ -71,7 +71,7 @@ int main() {
       boost::posix_time::microsec_clock::universal_time());
   boost::posix_time::time_duration duration(end-start);
   double flops((A.get_mols().size()+B.get_mols().size())*steps/
-               (duration.total_milliseconds()/1000));
+               (duration.total_milliseconds()/1000.0));
   std::cout << "duration:" << duration << " GFLOPS:" << flops/1e+9 <<
     " msecs:" << duration.total_milliseconds() << std::endl;
 }

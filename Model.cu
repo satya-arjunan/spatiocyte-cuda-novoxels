@@ -41,7 +41,7 @@ Model::Model():
 } 
 
 Model::~Model() {
-  curandDestroyGenerator(random_generator_);
+  //curandDestroyGenerator(random_generator_);
 }
 
 void Model::initialize() {
@@ -52,9 +52,9 @@ void Model::initialize() {
       species_[i]->initialize();
     }
   randoms_.resize(randoms_size_);
-  curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_MT19937);
-  curandSetPseudoRandomGeneratorSeed(random_generator_, 1234ULL);
-  generate_randoms();
+  //curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_MT19937);
+  //curandSetPseudoRandomGeneratorSeed(random_generator_, 1234ULL);
+  //generate_randoms();
 }
 
 void Model::generate_randoms() {
