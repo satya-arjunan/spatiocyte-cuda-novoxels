@@ -114,10 +114,8 @@ void Model::initialize_random_generator() {
 */
 
 void Model::initialize_random_generator() {
-  //cudaMalloc((void **)&curand_states_, blocks_*256 * sizeof(curandState));
-  //setup_kernel<<<blocks_, 256>>>(curand_states_);
-  setup_kernel2<<<blocks_, 256>>>();
-  cudaDeviceSynchronize();
+  cudaMalloc((void **)&curand_states_, blocks_*256 * sizeof(curandState));
+  setup_kernel<<<blocks_, 256>>>(curand_states_);
 }
 
 void Model::generate_randoms() {
