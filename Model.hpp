@@ -32,13 +32,14 @@
 #ifndef __Model_hpp
 #define __Model_hpp
 
-
 #include <Common.hpp>
 #include <Compartment.hpp>
 #include <Stepper.hpp>
 #include <thrust/device_vector.h>
 #include <curand.h>
 #include <sstream>
+
+extern __device__ int* curand_states[64];
 
 class Model {
  public: 

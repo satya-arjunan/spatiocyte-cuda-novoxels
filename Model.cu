@@ -33,6 +33,8 @@
 #include <Model.hpp>
 #include <math.h>
 
+__device__ int* curand_states[64];
+
 Model::Model():
   null_id_((voxel_t)(pow(2,sizeof(voxel_t)*8))),
   randoms_size_(536870912),
@@ -40,8 +42,22 @@ Model::Model():
   compartment_("root", LENGTH_X, LENGTH_Y, LENGTH_Z, *this) {
 } 
 
+__global__ void freemem()
+{
+  int* ptr = curand_states[blockIdx.x];
+  if (ptr == NULL) {
+    printf("Block %d, Thread %d: final value = %d\n",
+        blockIdx.x, threadIdx.x, ptr[threadIdx.x]);
+  }
+  // Only free from one thread!
+  if (threadIdx.x == 0) {
+    free(ptr);
+  }
+}
+
 Model::~Model() {
   //curandDestroyGenerator(random_generator_);
+  freemem<<<blocks_, 256>>>();
 }
 
 void Model::initialize() {
@@ -56,9 +72,46 @@ void Model::initialize() {
   //better performance when the number of blocks is twice the number of 
   //multi processors (aka streams):
   blocks_ = prop.multiProcessorCount*4;
+  std::cout << "number blocks:" << blocks_ << std::endl;
   //initialize_randoms();
   initialize_random_generator();
 }
+
+//Setup the default XORWOW generator:
+__global__
+void setup_kernel2() {
+  int id = threadIdx.x + blockIdx.x * 256;
+  if(threadIdx.x == 0) {
+    curand_states[blockIdx.x] = 
+      (int*)malloc(blockDim.x*sizeof(int));
+  }
+  __syncthreads();
+  if(curand_states[blockIdx.x] == NULL) {
+    printf("block %d, thread %d\n", blockIdx.x, threadIdx.x);
+  }
+  //curand_init(1234, id, 0, &curand_states[blockIdx.x][threadIdx.x]);
+  curand_states[blockIdx.x][threadIdx.x] = threadIdx.x;
+}
+/*
+__global__
+void setup_kernel2() {
+  int id = threadIdx.x + blockIdx.x * 256;
+  if(threadIdx.x == 0) {
+    curand_states[blockIdx.x] = 
+      (curandState*)malloc(blockDim.x*sizeof(curandState));
+  }
+  __syncthreads();
+  curand_init(1234, id, 0, &curand_states[blockIdx.x][threadIdx.x]);
+}
+*/
+
+__global__
+void setup_kernel(curandState *state) {
+  int id = threadIdx.x + blockIdx.x * 256;
+  /* Each thread gets same seed, a different sequence number, no offset */
+  curand_init(1234, id, 0, &state[id]);
+}
+
 
 void Model::initialize_randoms() {
   randoms_.resize(randoms_size_);
@@ -72,17 +125,17 @@ void Model::initialize_randoms() {
   generate_randoms();
 }
 
-//Setup the default XORWOW generator:
-__global__
-void setup_kernel(curandState *state) {
-  int id = threadIdx.x + blockIdx.x * 256;
-  /* Each thread gets same seed, a different sequence number, no offset */
-  curand_init(1234, id, 0, &state[id]);
+/*
+void Model::initialize_random_generator() {
+  setup_kernel<<<blocks_, 256>>>();
 }
+*/
 
 void Model::initialize_random_generator() {
   cudaMalloc((void **)&curand_states_, blocks_*256 * sizeof(curandState));
   setup_kernel<<<blocks_, 256>>>(curand_states_);
+  setup_kernel2<<<blocks_, 256>>>();
+  cudaDeviceSynchronize();
 }
 
 void Model::generate_randoms() {

@@ -67,6 +67,7 @@ int main() {
       boost::posix_time::microsec_clock::universal_time()); 
   //model.run(0.1);
   unsigned steps(model.run(0.05));
+  cudaDeviceSynchronize();
   boost::posix_time::ptime end(
       boost::posix_time::microsec_clock::universal_time());
   boost::posix_time::time_duration duration(end-start);

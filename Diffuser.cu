@@ -150,9 +150,11 @@ void concurrent_walk(
   unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
   const unsigned total_threads(blockDim.x*gridDim.x);
   curandState local_state = curand_states_[index];
+  int* ptr = curand_states[blockIdx.x];
   while(index < mol_size_) {
     const umol_t vdx(mols_[index]);
     float ranf(curand_uniform(&local_state)*11.999999);
+    ptr[threadIdx.x] += threadIdx.x;
     const unsigned rand((unsigned)truncf(ranf));
     mol2_t val(get_tar(vdx, rand));
     if(val < num_voxels_) {
