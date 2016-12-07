@@ -33,6 +33,7 @@
 #define __Diffuser_hpp
 
 #include <thrust/device_vector.h>
+#include <curand_kernel.h>
 #include <Common.hpp>
 
 class Diffuser
@@ -55,8 +56,8 @@ private:
   const voxel_t vac_id_;
   const voxel_t null_id_;
   unsigned seed_;
-  unsigned blocks_;
   unsigned& randoms_counter_;
+  unsigned& blocks_;
   voxel_t stride_;
   voxel_t id_stride_;
   umol_t num_voxels_;

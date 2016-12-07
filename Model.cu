@@ -41,7 +41,7 @@ Model::Model():
 } 
 
 Model::~Model() {
-  curandDestroyGenerator(random_generator_);
+  //curandDestroyGenerator(random_generator_);
 }
 
 void Model::initialize() {
@@ -51,15 +51,47 @@ void Model::initialize() {
   for (unsigned i(0), n(species_.size()); i != n; ++i) {
       species_[i]->initialize();
     }
+  cudaDeviceProp prop;
+  cudaGetDeviceProperties(&prop, 0);
+  //better performance when the number of blocks is twice the number of 
+  //multi processors (aka streams):
+  blocks_ = prop.multiProcessorCount*4;
+  //initialize_randoms();
+  initialize_random_generator();
+}
+
+void Model::initialize_randoms() {
   randoms_.resize(randoms_size_);
-  curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_MT19937);
+  //Ordered from fastest to slowest:
+  curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_XORWOW);
+  //curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_PHILOX4_32_10);
+  //curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_MT19937);
+  //curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_MTGP32);
+  //curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_MRG32K3A);
   curandSetPseudoRandomGeneratorSeed(random_generator_, 1234ULL);
   generate_randoms();
+}
+
+//Setup the default XORWOW generator:
+__global__
+void setup_kernel(curandState *state) {
+  int id = threadIdx.x + blockIdx.x * 256;
+  /* Each thread gets same seed, a different sequence number, no offset */
+  curand_init(1234, id, 0, &state[id]);
+}
+
+void Model::initialize_random_generator() {
+  cudaMalloc((void **)&curand_states_, blocks_*256 * sizeof(curandState));
+  setup_kernel<<<blocks_, 256>>>(curand_states_);
 }
 
 void Model::generate_randoms() {
   curandGenerateUniform(random_generator_,
       thrust::raw_pointer_cast(&randoms_[0]), randoms_size_);
+}
+
+curandState* Model::get_curand_states() {
+  return curand_states_;
 }
 
 thrust::device_vector<float>& Model::get_randoms() {
@@ -68,6 +100,10 @@ thrust::device_vector<float>& Model::get_randoms() {
 
 unsigned& Model::get_randoms_counter() {
   return randoms_counter_;
+}
+
+unsigned& Model::get_blocks() {
+  return blocks_;
 }
 
 unsigned Model::get_randoms_size() const {

@@ -55,12 +55,18 @@ class Model {
   thrust::device_vector<float>& get_randoms();
   unsigned get_randoms_size() const;
   unsigned& get_randoms_counter();
+  unsigned& get_blocks();
   void generate_randoms();
+  curandState* get_curand_states();
  private:
+  void initialize_random_generator();
+  void initialize_randoms();
   std::vector<Species*> species_;
   const voxel_t null_id_;
   const unsigned randoms_size_;
   unsigned randoms_counter_;
+  unsigned blocks_;
+  curandState* curand_states_;
   Stepper stepper_;
   Compartment compartment_; //must declare this at the end after initializing others
   voxel_t stride_;
