@@ -39,7 +39,7 @@
 #include <curand.h>
 #include <sstream>
 
-extern __device__ curandState* curand_states[64];
+extern __device__ curandState* curand_states;
 
 class Model {
  public: 

@@ -136,7 +136,6 @@ unsigned get_tar(
   return vdx-1;
 }
 
-/*
 __global__
 void concurrent_walk(
     const unsigned mol_size_,
@@ -145,12 +144,15 @@ void concurrent_walk(
     const voxel_t vac_id_,
     const voxel_t null_id_,
     const umol_t num_voxels_,
-    curandState* curand_states_,
     umol_t* mols_) {
   //index is the unique global thread id (size: total_threads)
   unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
   const unsigned total_threads(blockDim.x*gridDim.x);
-  curandState local_state = curand_states_[index];
+  __shared__ curandState local_state;
+  if(threadIdx.x == 0) {
+    local_state = curand_states[blockIdx.x];
+  }
+  __syncthreads();
   while(index < mol_size_) {
     const umol_t vdx(mols_[index]);
     float ranf(curand_uniform(&local_state)*11.999999);
@@ -162,8 +164,10 @@ void concurrent_walk(
     //Do nothing, stay at original position
     index += total_threads;
   }
-  curand_states_[index] = local_state;
-  //__syncthreads();
+  __syncthreads();
+  if(threadIdx.x == 0) {
+    curand_states[blockIdx.x] = local_state;
+  }
 }
 
 void Diffuser::walk() {
@@ -175,12 +179,10 @@ void Diffuser::walk() {
       vac_id_,
       null_id_,
       num_voxels_,
-      compartment_.get_model().get_curand_states(),
       thrust::raw_pointer_cast(&mols_[0]));
 }
-*/
 
-/* With persistent local curand_states: 2.3 s */
+/* With persistent local curand_states: 2.3 s or 22.75 s
 __global__
 void concurrent_walk(
     const unsigned mol_size_,
@@ -219,6 +221,7 @@ void Diffuser::walk() {
       num_voxels_,
       thrust::raw_pointer_cast(&mols_[0]));
 }
+*/
 
 /* Without generated randoms: 2.6 s
 __global__

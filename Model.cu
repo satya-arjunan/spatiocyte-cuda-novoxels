@@ -33,7 +33,7 @@
 #include <Model.hpp>
 #include <math.h>
 
-__device__ curandState* curand_states[64];
+__device__ curandState* curand_states;
 
 Model::Model():
   null_id_((voxel_t)(pow(2,sizeof(voxel_t)*8))),
@@ -68,11 +68,10 @@ __global__
 void setup_kernel() {
   int id = threadIdx.x + blockIdx.x * 256;
   if(threadIdx.x == 0) {
-    curand_states[blockIdx.x] = 
-      (curandState*)malloc(blockDim.x*sizeof(curandState));
+    curand_states = (curandState*)malloc(64*sizeof(curandState));
+    curand_init(1234, id, 0, &curand_states[blockIdx.x]);
   }
   __syncthreads();
-  curand_init(1234, id, 0, &curand_states[blockIdx.x][threadIdx.x]);
 }
 
 
