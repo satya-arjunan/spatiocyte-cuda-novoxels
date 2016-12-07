@@ -65,7 +65,7 @@ void Model::initialize() {
 
 //Setup the default XORWOW generator:
 __global__
-void setup_kernel2() {
+void setup_kernel() {
   int id = threadIdx.x + blockIdx.x * 256;
   if(threadIdx.x == 0) {
     curand_states[blockIdx.x] = 
@@ -74,25 +74,15 @@ void setup_kernel2() {
   __syncthreads();
   curand_init(1234, id, 0, &curand_states[blockIdx.x][threadIdx.x]);
 }
-/*
-__global__
-void setup_kernel2() {
-  int id = threadIdx.x + blockIdx.x * 256;
-  if(threadIdx.x == 0) {
-    curand_states[blockIdx.x] = 
-      (curandState*)malloc(blockDim.x*sizeof(curandState));
-  }
-  __syncthreads();
-  curand_init(1234, id, 0, &curand_states[blockIdx.x][threadIdx.x]);
-}
-*/
 
+
+/*
 __global__
 void setup_kernel(curandState *state) {
   int id = threadIdx.x + blockIdx.x * 256;
-  /* Each thread gets same seed, a different sequence number, no offset */
   curand_init(1234, id, 0, &state[id]);
 }
+*/
 
 
 void Model::initialize_randoms() {
@@ -107,16 +97,16 @@ void Model::initialize_randoms() {
   generate_randoms();
 }
 
-/*
 void Model::initialize_random_generator() {
   setup_kernel<<<blocks_, 256>>>();
 }
-*/
 
+/*
 void Model::initialize_random_generator() {
   cudaMalloc((void **)&curand_states_, blocks_*256 * sizeof(curandState));
   setup_kernel<<<blocks_, 256>>>(curand_states_);
 }
+*/
 
 void Model::generate_randoms() {
   curandGenerateUniform(random_generator_,

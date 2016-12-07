@@ -136,6 +136,7 @@ unsigned get_tar(
   return vdx-1;
 }
 
+/*
 __global__
 void concurrent_walk(
     const unsigned mol_size_,
@@ -177,8 +178,9 @@ void Diffuser::walk() {
       compartment_.get_model().get_curand_states(),
       thrust::raw_pointer_cast(&mols_[0]));
 }
+*/
 
-/* With persistent local curand_states: 2.3 s
+/* With persistent local curand_states: 2.3 s */
 __global__
 void concurrent_walk(
     const unsigned mol_size_,
@@ -217,7 +219,6 @@ void Diffuser::walk() {
       num_voxels_,
       thrust::raw_pointer_cast(&mols_[0]));
 }
-*/
 
 /* Without generated randoms: 2.6 s
 __global__
