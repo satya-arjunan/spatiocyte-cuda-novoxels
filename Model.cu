@@ -33,7 +33,7 @@
 #include <Model.hpp>
 #include <math.h>
 
-__device__ int* curand_states[64];
+__device__ curandState* curand_states[64];
 
 Model::Model():
   null_id_((voxel_t)(pow(2,sizeof(voxel_t)*8))),
@@ -42,22 +42,8 @@ Model::Model():
   compartment_("root", LENGTH_X, LENGTH_Y, LENGTH_Z, *this) {
 } 
 
-__global__ void freemem()
-{
-  int* ptr = curand_states[blockIdx.x];
-  if (ptr == NULL) {
-    printf("Block %d, Thread %d: final value = %d\n",
-        blockIdx.x, threadIdx.x, ptr[threadIdx.x]);
-  }
-  // Only free from one thread!
-  if (threadIdx.x == 0) {
-    free(ptr);
-  }
-}
-
 Model::~Model() {
   //curandDestroyGenerator(random_generator_);
-  freemem<<<blocks_, 256>>>();
 }
 
 void Model::initialize() {
@@ -83,14 +69,10 @@ void setup_kernel2() {
   int id = threadIdx.x + blockIdx.x * 256;
   if(threadIdx.x == 0) {
     curand_states[blockIdx.x] = 
-      (int*)malloc(blockDim.x*sizeof(int));
+      (curandState*)malloc(blockDim.x*sizeof(curandState));
   }
   __syncthreads();
-  if(curand_states[blockIdx.x] == NULL) {
-    printf("block %d, thread %d\n", blockIdx.x, threadIdx.x);
-  }
-  //curand_init(1234, id, 0, &curand_states[blockIdx.x][threadIdx.x]);
-  curand_states[blockIdx.x][threadIdx.x] = threadIdx.x;
+  curand_init(1234, id, 0, &curand_states[blockIdx.x][threadIdx.x]);
 }
 /*
 __global__
@@ -132,8 +114,8 @@ void Model::initialize_random_generator() {
 */
 
 void Model::initialize_random_generator() {
-  cudaMalloc((void **)&curand_states_, blocks_*256 * sizeof(curandState));
-  setup_kernel<<<blocks_, 256>>>(curand_states_);
+  //cudaMalloc((void **)&curand_states_, blocks_*256 * sizeof(curandState));
+  //setup_kernel<<<blocks_, 256>>>(curand_states_);
   setup_kernel2<<<blocks_, 256>>>();
   cudaDeviceSynchronize();
 }
