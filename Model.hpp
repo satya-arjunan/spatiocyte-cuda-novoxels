@@ -62,7 +62,6 @@ class Model {
   Stepper stepper_;
   Compartment compartment_; //must declare this after initializing others
   voxel_t stride_;
-  curandGenerator_t random_generator_;
 };
 
 #endif /* __Model_hpp */
