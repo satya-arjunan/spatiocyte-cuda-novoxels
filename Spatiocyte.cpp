@@ -79,8 +79,8 @@ int main() {
   boost::posix_time::ptime end(
       boost::posix_time::microsec_clock::universal_time());
   boost::posix_time::time_duration duration(end-start);
-  double flops((A.get_mols().size())*steps/
+  double bups((A.get_mols().size())*steps/
                (duration.total_milliseconds()/1000.0));
-  std::cout << "duration:" << duration << " BUPS:" << /1e+9 <<
+  std::cout << "duration:" << duration << " BUPS:" << bups/1e+9 <<
     " msecs:" << duration.total_milliseconds() << std::endl;
 }
