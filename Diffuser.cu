@@ -44,14 +44,10 @@ Diffuser::Diffuser(const double D, Species& species):
   species_(species),
   compartment_(species_.get_compartment()),
   mols_(species_.get_mols()),
-  offsets_(compartment_.get_offsets()),
-  randoms_(compartment_.get_model().get_randoms()),
-  randoms_counter_(compartment_.get_model().get_randoms_counter()),
   blocks_(compartment_.get_model().get_blocks()),
   species_id_(species_.get_id()),
   vac_id_(species_.get_vac_id()),
-  null_id_(species_.get_model().get_null_id()),
-  seed_(0) {
+  null_id_(species_.get_model().get_null_id()) {
 }
 
 void Diffuser::initialize() {
@@ -79,17 +75,6 @@ void Diffuser::initialize() {
       } 
     } 
   } 
-  /*
-  std::cout << "My name:" << species_.get_name_id() << std::endl;
-  for(unsigned i(0); i != is_reactive_.size(); ++i) {
-    std::cout << "\t" << is_reactive_[i] << " reactant name:" << model.get_species()[i]->get_name_id() << std::endl;
-    std::cout << "\t" << (reactions_[i] != NULL) << std::endl;
-  }
-  */
-}
-
-double Diffuser::get_D() const {
-  return D_;
 }
 
 /* kernel<<<3, 5>>>()
@@ -101,6 +86,11 @@ double Diffuser::get_D() const {
    threadIdx = index of the thread in a block = [0,1,2,3,4]
    980 GTX: multiProcessorCount = 16
 */
+
+
+double Diffuser::get_D() const {
+  return D_;
+}
 
 __device__
 unsigned get_tar(
@@ -148,11 +138,7 @@ void concurrent_walk(
   //index is the unique global thread id (size: total_threads)
   unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
   const unsigned total_threads(blockDim.x*gridDim.x);
-  __shared__ curandState local_state;
-  if(threadIdx.x == 0) {
-    local_state = curand_states[blockIdx.x];
-  }
-  __syncthreads();
+  curandState local_state = curand_states[blockIdx.x][threadIdx.x];
   while(index < mol_size_) {
     const umol_t vdx(mols_[index]);
     float ranf(curand_uniform(&local_state)*11.999999);
@@ -164,10 +150,7 @@ void concurrent_walk(
     //Do nothing, stay at original position
     index += total_threads;
   }
-  __syncthreads();
-  if(threadIdx.x == 0) {
-    curand_states[blockIdx.x] = local_state;
-  }
+  curand_states[blockIdx.x][threadIdx.x] = local_state;
 }
 
 void Diffuser::walk() {
@@ -182,7 +165,7 @@ void Diffuser::walk() {
       thrust::raw_pointer_cast(&mols_[0]));
 }
 
-/* With persistent local curand_states: 2.3 s or 22.75 s
+/* With persistent local curand_states: 2.3 s or 22.8 s
 __global__
 void concurrent_walk(
     const unsigned mol_size_,

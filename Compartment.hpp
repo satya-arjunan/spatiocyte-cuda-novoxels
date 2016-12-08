@@ -57,16 +57,13 @@ class Compartment {
   Species& get_volume_species();
   Model& get_model();
   const std::string& get_name() const;
-  thrust::device_vector<mol_t>& get_offsets();
  private:
   void set_volume_structure();
   void set_surface_structure();
   void populate_mol(const umol_t);
-  void set_offsets();
  private:
   const std::string name_;
   Model& model_;
-  thrust::device_vector<mol_t> offsets_;
   const Vector<unsigned> lattice_dimensions_;
   const Vector<double> dimensions_;
   Species volume_species_;

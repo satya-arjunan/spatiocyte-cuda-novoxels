@@ -33,12 +33,10 @@
 #include <Model.hpp>
 #include <math.h>
 
-__device__ curandState* curand_states;
+__device__ curandState* curand_states[64];
 
 Model::Model():
   null_id_((voxel_t)(pow(2,sizeof(voxel_t)*8))),
-  randoms_size_(536870912),
-  randoms_counter_(0),
   compartment_("root", LENGTH_X, LENGTH_Y, LENGTH_Z, *this) {
 } 
 
@@ -59,7 +57,14 @@ void Model::initialize() {
   //multi processors (aka streams):
   blocks_ = prop.multiProcessorCount*4;
   std::cout << "number blocks:" << blocks_ << std::endl;
-  //initialize_randoms();
+  /*
+  //Ordered from fastest to slowest:
+  curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_XORWOW);
+  //curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_PHILOX4_32_10);
+  //curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_MT19937);
+  //curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_MTGP32);
+  //curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_MRG32K3A);
+  */
   initialize_random_generator();
 }
 
@@ -68,68 +73,19 @@ __global__
 void setup_kernel() {
   int id = threadIdx.x + blockIdx.x * 256;
   if(threadIdx.x == 0) {
-    curand_states = (curandState*)malloc(64*sizeof(curandState));
-    curand_init(1234, id, 0, &curand_states[blockIdx.x]);
+    curand_states[blockIdx.x] = 
+      (curandState*)malloc(blockDim.x*sizeof(curandState));
   }
   __syncthreads();
-}
-
-
-/*
-__global__
-void setup_kernel(curandState *state) {
-  int id = threadIdx.x + blockIdx.x * 256;
-  curand_init(1234, id, 0, &state[id]);
-}
-*/
-
-
-void Model::initialize_randoms() {
-  randoms_.resize(randoms_size_);
-  //Ordered from fastest to slowest:
-  curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_XORWOW);
-  //curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_PHILOX4_32_10);
-  //curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_MT19937);
-  //curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_MTGP32);
-  //curandCreateGenerator(&random_generator_, CURAND_RNG_PSEUDO_MRG32K3A);
-  curandSetPseudoRandomGeneratorSeed(random_generator_, 1234ULL);
-  generate_randoms();
+  curand_init(1234, id, 0, &curand_states[blockIdx.x][threadIdx.x]);
 }
 
 void Model::initialize_random_generator() {
   setup_kernel<<<blocks_, 256>>>();
 }
 
-/*
-void Model::initialize_random_generator() {
-  cudaMalloc((void **)&curand_states_, blocks_*256 * sizeof(curandState));
-  setup_kernel<<<blocks_, 256>>>(curand_states_);
-}
-*/
-
-void Model::generate_randoms() {
-  curandGenerateUniform(random_generator_,
-      thrust::raw_pointer_cast(&randoms_[0]), randoms_size_);
-}
-
-curandState* Model::get_curand_states() {
-  return curand_states_;
-}
-
-thrust::device_vector<float>& Model::get_randoms() {
-  return randoms_;
-}
-
-unsigned& Model::get_randoms_counter() {
-  return randoms_counter_;
-}
-
 unsigned& Model::get_blocks() {
   return blocks_;
-}
-
-unsigned Model::get_randoms_size() const {
-  return randoms_size_;
 }
 
 voxel_t Model::get_null_id() const {
@@ -164,4 +120,3 @@ Stepper& Model::get_stepper() {
 std::vector<Species*>& Model::get_species() {
   return species_;
 }
-

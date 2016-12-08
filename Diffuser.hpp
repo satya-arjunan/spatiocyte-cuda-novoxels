@@ -45,18 +45,13 @@ public:
   void walk();
   double get_D() const;
 private:
-  void set_offsets();
   const double D_;
   Species& species_;
   Compartment& compartment_;
   thrust::device_vector<umol_t>& mols_;
-  thrust::device_vector<mol_t>& offsets_;
-  thrust::device_vector<float>& randoms_;
   const voxel_t species_id_;
   const voxel_t vac_id_;
   const voxel_t null_id_;
-  unsigned seed_;
-  unsigned& randoms_counter_;
   unsigned& blocks_;
   voxel_t stride_;
   voxel_t id_stride_;

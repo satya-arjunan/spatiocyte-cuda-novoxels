@@ -39,7 +39,7 @@
 #include <curand.h>
 #include <sstream>
 
-extern __device__ curandState* curand_states;
+extern __device__ curandState* curand_states[64];
 
 class Model {
  public: 
@@ -53,27 +53,16 @@ class Model {
   std::vector<Species*>& get_species();
   voxel_t get_null_id() const;
   voxel_t get_stride() const;
-  thrust::device_vector<float>& get_randoms();
-  unsigned get_randoms_size() const;
-  unsigned& get_randoms_counter();
   unsigned& get_blocks();
-  void generate_randoms();
-  curandState* get_curand_states();
  private:
   void initialize_random_generator();
-  void initialize_randoms();
   std::vector<Species*> species_;
   const voxel_t null_id_;
-  const unsigned randoms_size_;
-  unsigned randoms_counter_;
   unsigned blocks_;
-  curandState* curand_states_;
   Stepper stepper_;
-  Compartment compartment_; //must declare this at the end after initializing others
+  Compartment compartment_; //must declare this after initializing others
   voxel_t stride_;
   curandGenerator_t random_generator_;
-  thrust::device_vector<float> randoms_;
 };
 
 #endif /* __Model_hpp */
-
