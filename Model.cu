@@ -104,6 +104,12 @@ unsigned Model::run(const double interval) {
   return steps;
 }
 
+void Model::step(const unsigned steps) {
+  for (unsigned i(0); i != steps; ++i) {
+      stepper_.step();
+    }
+}
+
 unsigned Model::push_species(Species& species) {
   species_.push_back(&species);
   return species_.size()-1;

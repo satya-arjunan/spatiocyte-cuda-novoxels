@@ -104,6 +104,7 @@ struct populate_lattice {
 
 void Species::populate() {
   mols_.resize(init_nmols_);
+  cudaDeviceSynchronize();
   const Vector<unsigned>& dimensions(compartment_.get_lattice_dimensions());
   thrust::transform(thrust::device, 
       thrust::counting_iterator<unsigned>(0),

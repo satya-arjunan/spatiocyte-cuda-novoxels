@@ -56,12 +56,13 @@ void Diffuser::initialize() {
   id_stride_ = species_id_*stride_;
   is_reactive_.resize(model.get_species().size(), false);
   reactions_.resize(model.get_species().size(), NULL);
-  substrate_mols_.resize(model.get_species().size(), NULL);
-  product_mols_.resize(model.get_species().size(), NULL);
-  reacteds_.resize(mols_.size()+1, 0);
+  //substrate_mols_.resize(model.get_species().size(), NULL);
+  //product_mols_.resize(model.get_species().size(), NULL);
+  //reacteds_.resize(mols_.size()+1, 0);
   const Vector<unsigned>& dimensions(compartment_.get_lattice_dimensions());
   num_voxels_ = dimensions.x*dimensions.y*dimensions.z;
 
+  /*
   std::vector<Reaction*>& reactions(species_.get_reactions());
   for(unsigned i(0); i != reactions.size(); ++i) {
     std::vector<Species*>& substrates(reactions[i]->get_substrates());
@@ -75,6 +76,7 @@ void Diffuser::initialize() {
       } 
     } 
   } 
+  */
 }
 
 /* kernel<<<3, 5>>>()
@@ -140,6 +142,7 @@ void concurrent_walk(
   const unsigned total_threads(blockDim.x*gridDim.x);
   curandState local_state = curand_states[blockIdx.x][threadIdx.x];
   while(index < mol_size_) {
+    mols_[index] = curand(&local_state);
     const uint32_t rand32(curand(&local_state));
     uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
     uint32_t rand(((uint32_t)rand16*12) >> 16);
@@ -174,6 +177,58 @@ void Diffuser::walk() {
       num_voxels_,
       thrust::raw_pointer_cast(&mols_[0]));
 }
+
+/* reduced global memory: 12.54 BUPS vs max 41.3 BUPS for rand generation
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* mols_) {
+  //index is the unique global thread id (size: total_threads)
+  unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
+  const unsigned total_threads(blockDim.x*gridDim.x);
+  curandState local_state = curand_states[blockIdx.x][threadIdx.x];
+  while(index < mol_size_) {
+    mols_[index] = curand(&local_state);
+    const uint32_t rand32(curand(&local_state));
+    uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
+    uint32_t rand(((uint32_t)rand16*12) >> 16);
+    mol2_t val(get_tar(mols_[index], rand));
+    if(val < num_voxels_) {
+      mols_[index] = val;
+    }
+    //Do nothing, stay at original position
+    index += total_threads;
+    if(index < mol_size_) {
+      rand16 = (uint16_t)(rand32 >> 16);
+      rand = ((uint32_t)rand16*12) >> 16;
+      mol2_t val(get_tar(mols_[index], rand));
+      if(val < num_voxels_) {
+        mols_[index] = val;
+      }
+      //Do nothing, stay at original position
+      index += total_threads;
+    }
+  }
+  curand_states[blockIdx.x][threadIdx.x] = local_state;
+}
+
+void Diffuser::walk() {
+  const size_t size(mols_.size());
+  concurrent_walk<<<blocks_, 256>>>(
+      size,
+      stride_,
+      id_stride_,
+      vac_id_,
+      null_id_,
+      num_voxels_,
+      thrust::raw_pointer_cast(&mols_[0]));
+}
+*/
 
 /* splitting uint32_t rand into two uint16_t: 22.4 s 
 __global__

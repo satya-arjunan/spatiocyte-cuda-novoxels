@@ -46,6 +46,7 @@ class Model {
   Model();
   ~Model();
   void initialize();
+  void step(const unsigned);
   unsigned run(const double);
   unsigned push_species(Species&);
   Compartment& get_compartment();
