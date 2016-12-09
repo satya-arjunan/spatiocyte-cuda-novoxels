@@ -39,6 +39,7 @@
 #include <emmintrin.h> //SSE2 intrinsics
 #include <immintrin.h> //AVX2 intrinsics
 #include <Vector.hpp>
+#include <vector_types.h>
 
 class Compartment;
 class Diffuser;
@@ -55,6 +56,15 @@ typedef uint32_t voxel_t;
 
 
 //Just change the int32_t, uint32_t, int64_t and uint64_t values to other bit sizes
+typedef int3 mol_t;
+typedef uint3 umol_t;
+typedef int3 mol2_t;
+typedef uint3 umol2_t;
+
+typedef int32_t imol_t;
+typedef uint32_t uimol_t;
+
+/*
 typedef int32_t mol_t;
 typedef uint32_t umol_t;
 typedef int64_t mol2_t;
@@ -62,9 +72,9 @@ typedef uint64_t umol2_t;
 
 struct Coord
 {
-  umol_t x:5;
-  umol_t y:5;
-  umol_t z:5;
+  umol_t x:10;
+  umol_t y:10;
+  umol_t z:10;
 };
 
 struct CoordInt
@@ -73,28 +83,6 @@ struct CoordInt
   int y;
   int z;
 };
-
-template<typename T>
-void cout_binary(const T a, const std::string str) {
-  std::cout << str << " msb -> lsb:" << std::endl;
-  const char* beg(reinterpret_cast<const char*>(&a));
-  const char* end(beg + sizeof(a));
-  while(1) {
-    std::cout << std::bitset<CHAR_BIT>(*--end) << ' ';
-    if(end == beg) {
-      break;
-    }
-  }
-  std::cout << std::endl;
-}
-
-template<typename Register, typename CastType>
-void cout_uint(const Register reg, const std::string title) {
-  std::cout << title << " msb -> lsb:" << std::endl;
-  for(int i(sizeof(Register)/sizeof(CastType)-1); i >= 0; --i) {
-    std::cout << (uint32_t)((CastType*)&reg)[i] << " ";
-  }
-  std::cout << std::endl;
-}
+*/
 
 #endif /* __Common_hpp */

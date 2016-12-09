@@ -37,7 +37,7 @@ Compartment::Compartment(std::string name, const double len_x,
     const double len_y, const double len_z, Model& model):
   name_(name),
   model_(model),
-  lattice_dimensions_(NUM_COL, NUM_ROW, NUM_LAY),
+  lattice_dimensions_(make_uint3(NUM_COL, NUM_ROW, NUM_LAY)),
   dimensions_(NUM_COL*HCP_X, 
               NUM_ROW*2*VOXEL_RADIUS,
               NUM_LAY*HCP_Z),
@@ -49,12 +49,12 @@ void Compartment::initialize() {
   std::cout << "Volume:" << dimensions_.x*dimensions_.y*dimensions_.z <<
     " m^3" << std::endl;
   double num_voxel(double(NUM_COL)*NUM_ROW*NUM_LAY);
-  double max_umol_t(pow(2,sizeof(umol_t)*8));
-  if(num_voxel > max_umol_t)
+  double max_uimol_t(pow(2,sizeof(uimol_t)*8));
+  if(num_voxel > max_uimol_t)
     {
       std::cout << "Number of voxels:" << num_voxel <<
-        " exceeds max value of umol_t:" << max_umol_t << std::endl;
-      std::cout << "Reduce lattice lengths or change umol_t type in " <<
+        " exceeds max value of uimol_t:" << max_uimol_t << std::endl;
+      std::cout << "Reduce lattice lengths or change uimol_t type in " <<
         "Common.hpp. Exiting now..." << std::endl;
       exit(0);
     }
@@ -62,7 +62,7 @@ void Compartment::initialize() {
   set_surface_structure();
 }
 
-const Vector<unsigned>& Compartment::get_lattice_dimensions() const {
+const uint3& Compartment::get_lattice_dimensions() const {
   return lattice_dimensions_;
 }
 
@@ -92,32 +92,52 @@ const std::string& Compartment::get_name() const {
 
 void Compartment::set_volume_structure() {
   /*
-  for(umol_t i(0); i != get_lattice().get_num_voxel(); ++i) {
+  for(uimol_t i(0); i != get_lattice().get_num_voxel(); ++i) {
     get_volume_species().push_host_mol(i);
   }
   */
 }
 
+
+uimol_t Compartment::umol_to_uimol(const umol_t& umol) {
+  return 
+    umol.y + 
+    umol.x*lattice_dimensions_.y + 
+    umol.z*lattice_dimensions_.x*lattice_dimensions_.y;
+}
+
+umol_t Compartment::uimol_to_umol(const uimol_t& uimol) {
+  const unsigned xy(lattice_dimensions_.x*lattice_dimensions_.y);
+  return make_uint3(
+      uimol%xy/lattice_dimensions_.y,
+      uimol%xy%lattice_dimensions_.y,
+      uimol/xy);
+}
+
+
+
 void Compartment::set_surface_structure() {
-  for (umol_t i(0); i != NUM_COLROW; ++i) {
+  /*
+  for (uimol_t i(0); i != NUM_COLROW; ++i) {
     get_surface_species().push_host_mol(i);
     get_surface_species().push_host_mol(NUM_VOXEL-1-i);
   }
-  for (umol_t i(1); i != NUM_LAY-1; ++i) {
+  for (uimol_t i(1); i != NUM_LAY-1; ++i) {
     //layer_row yz-plane
-    for (umol_t j(0); j != NUM_ROW; ++j) {
+    for (uimol_t j(0); j != NUM_ROW; ++j) {
       get_surface_species().push_host_mol(i*NUM_COLROW+j);
       get_surface_species().push_host_mol(i*NUM_COLROW+j+NUM_ROW*
                                          (NUM_COL-1));
     }
     //layer_col xz-plane
-    for (umol_t j(1); j != NUM_COL-1; ++j) {
+    for (uimol_t j(1); j != NUM_COL-1; ++j) {
       get_surface_species().push_host_mol(i*NUM_COLROW+j*NUM_ROW);
       get_surface_species().push_host_mol(i*NUM_COLROW+j*NUM_ROW+
                                          NUM_ROW-1);
     }
   }
   get_surface_species().populate_in_lattice();
+  */
 }
 
 

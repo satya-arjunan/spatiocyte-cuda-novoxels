@@ -47,9 +47,9 @@ private:
   void initialize_log();
   void log_structure_species();
   void log_species();
-  void log_mols(const umol_t);
+  void log_mols(const unsigned);
 private:
-  umol_t marker_;
+  uimol_t marker_;
   std::string filename_;
   std::ofstream logfile_;
   Compartment& compartment_;

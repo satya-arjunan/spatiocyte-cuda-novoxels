@@ -38,12 +38,12 @@
 
 #define HCP_X double(VOXEL_RADIUS*1.732050807568877)
 #define HCP_Z double(VOXEL_RADIUS*1.632993161855452)
-#define NUM_COL mol_t(LENGTH_X/HCP_X+3)
-#define NUM_LAY mol_t(LENGTH_Z/HCP_Z+3)
-#define NUM_ROW mol_t(LENGTH_Y/VOXEL_RADIUS/2+3)
-#define NUM_COLROW mol_t(NUM_COL*NUM_ROW)
-#define NUM_COLROWROW umol_t(umol_t(NUM_COLROW)*NUM_ROW)
-#define NUM_VOXEL umol_t(umol_t(NUM_COLROW)*NUM_LAY)
+#define NUM_COL imol_t(LENGTH_X/HCP_X+3)
+#define NUM_LAY imol_t(LENGTH_Z/HCP_Z+3)
+#define NUM_ROW imol_t(LENGTH_Y/VOXEL_RADIUS/2+3)
+#define NUM_COLROW imol_t(NUM_COL*NUM_ROW)
+#define NUM_COLROWROW uimol_t(uimol_t(NUM_COLROW)*NUM_ROW)
+#define NUM_VOXEL uimol_t(uimol_t(NUM_COLROW)*NUM_LAY)
 
 class Compartment { 
  public: 
@@ -51,12 +51,14 @@ class Compartment {
   ~Compartment() {}
   void initialize();
   Vector<double> get_center() const;
-  const Vector<unsigned>& get_lattice_dimensions() const;
+  const uint3& get_lattice_dimensions() const;
   const Vector<double>& get_dimensions() const;
   Species& get_surface_species();
   Species& get_volume_species();
   Model& get_model();
   const std::string& get_name() const;
+  uimol_t umol_to_uimol(const umol_t&);
+  umol_t uimol_to_umol(const uimol_t&);
  private:
   void set_volume_structure();
   void set_surface_structure();
@@ -64,7 +66,7 @@ class Compartment {
  private:
   const std::string name_;
   Model& model_;
-  const Vector<unsigned> lattice_dimensions_;
+  const uint3 lattice_dimensions_;
   const Vector<double> dimensions_;
   Species volume_species_;
   Species surface_species_;

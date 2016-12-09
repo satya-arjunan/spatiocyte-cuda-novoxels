@@ -75,37 +75,53 @@ std::vector<Reaction*>& Species::get_reactions() {
   return reactions_;
 }
 
+__host__ __device__
+uimol_t umol_to_uimol(const umol_t& umol, const umol_t& dimensions) {
+  return umol.y + umol.x*dimensions.y + umol.z*dimensions.x*dimensions.y;
+}
+
+__host__ __device__
+umol_t uimol_to_umol(const uimol_t& uimol, const umol_t& dimensions) {
+  const unsigned xy(dimensions.x*dimensions.y);
+  //(cols, row, lay)
+  return make_uint3(uimol%xy/dimensions.y, uimol%xy%dimensions.y, uimol/xy);
+}
+
+
+
 //overlapping molecule population
 struct populate_lattice {
   __host__ __device__ populate_lattice(
       const unsigned seed,
-      const umol_t mol_size,
+      const uimol_t mol_size,
       const voxel_t vac_id,
       const voxel_t stride_id,
-      const umol_t voxel_size):
+      const uint3 dimensions):
     seed_(seed),
     mol_size_(mol_size),
     vac_id_(vac_id),
     stride_id_(stride_id),
-    voxel_size_(voxel_size) {}
+    dimensions_(dimensions) {}
   __device__ umol_t operator()(const unsigned n) const {
     thrust::default_random_engine rng(seed_);
     rng.discard(n);
-    thrust::uniform_int_distribution<unsigned> u(0, voxel_size_);
-    return u(rng);
+    thrust::uniform_int_distribution<unsigned> u(0, dimensions_.x*
+        dimensions_.y*dimensions_.z);
+    uimol_t rand(u(rng));
+    return umol_t(uimol_to_umol(u(rng), dimensions_));
   }
   const unsigned seed_;
-  const umol_t mol_size_;
+  const uimol_t mol_size_;
   const voxel_t vac_id_;
   const voxel_t stride_id_;
-  const umol_t voxel_size_;
+  const uint3 dimensions_;
 };
 
 
 void Species::populate() {
   mols_.resize(init_nmols_);
   cudaDeviceSynchronize();
-  const Vector<unsigned>& dimensions(compartment_.get_lattice_dimensions());
+  const Vector<unsigned>& dimensions();
   thrust::transform(thrust::device, 
       thrust::counting_iterator<unsigned>(0),
       thrust::counting_iterator<unsigned>(init_nmols_),
@@ -115,7 +131,7 @@ void Species::populate() {
         init_nmols_,
         vac_id_,
         get_id()*model_.get_stride(),
-        dimensions.x*dimensions.y*dimensions.z));
+        compartment_.get_lattice_dimensions()));
 }
 
 void Species::populate_in_lattice() {

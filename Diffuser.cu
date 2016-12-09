@@ -59,7 +59,7 @@ void Diffuser::initialize() {
   //substrate_mols_.resize(model.get_species().size(), NULL);
   //product_mols_.resize(model.get_species().size(), NULL);
   //reacteds_.resize(mols_.size()+1, 0);
-  const Vector<unsigned>& dimensions(compartment_.get_lattice_dimensions());
+  const uint3& dimensions(compartment_.get_lattice_dimensions());
   num_voxels_ = dimensions.x*dimensions.y*dimensions.z;
 
   /*
@@ -79,6 +79,11 @@ void Diffuser::initialize() {
   */
 }
 
+double Diffuser::get_D() const {
+  return D_;
+}
+
+
 /* kernel<<<3, 5>>>()
    <-block0-><-block1-><-block2->
    |0|1|2|3|4|0|1|2|3|4|0|1|2|3|4|
@@ -90,42 +95,75 @@ void Diffuser::initialize() {
 */
 
 
-double Diffuser::get_D() const {
-  return D_;
-}
-
 __device__
-unsigned get_tar(
-    const unsigned vdx,
+void set_tar(
+    umol_t& val,
     const unsigned nrand) {
-  const bool odd_col((vdx%NUM_COLROW/NUM_ROW)&1);
-  const bool odd_lay((vdx/NUM_COLROW)&1);
-  switch(nrand)
-    {
+  const umol_t vdx(val);
+  switch(nrand) {
+    case 0:
+        val.y += -1;
+      break;
+      //return vdx-1;
     case 1:
-      return vdx+1;
+        val.y += 1;
+      break;
+      //return vdx+1;
     case 2:
-      return vdx+(odd_col^odd_lay)-NUM_ROW-1 ;
+      val.x += -1;
+      val.y += ((vdx.x&1)^(vdx.z&1))-1;
+      break;
+      //return vdx+(odd_col^odd_lay)-NUM_ROW-1 ;
     case 3:
-      return vdx+(odd_col^odd_lay)-NUM_ROW;
+      val.x += -1;
+      val.y += ((vdx.x&1)^(vdx.z&1));
+      break;
+      //return vdx+(odd_col^odd_lay)-NUM_ROW;
     case 4:
-      return vdx+(odd_col^odd_lay)+NUM_ROW-1;
+      val.x += 1;
+      val.y += ((vdx.x&1)^(vdx.z&1))-1;
+      break;
+      //return vdx+(odd_col^odd_lay)+NUM_ROW-1;
     case 5:
-      return vdx+(odd_col^odd_lay)+NUM_ROW;
+      val.x += 1;
+      val.y += ((vdx.x&1)^(vdx.z&1));
+      break;
+      //return vdx+(odd_col^odd_lay)+NUM_ROW;
     case 6:
-      return vdx+NUM_ROW*(odd_lay-NUM_COL-1)-(odd_col&odd_lay);
+      val.x += (vdx.z&1)-1;
+      val.y += -((vdx.x&1)&(vdx.z&1));
+      val.z += -1;
+      break;
+      //return vdx+NUM_ROW*(odd_lay-NUM_COL-1)-(odd_col&odd_lay);
     case 7:
-      return vdx+!odd_col*(odd_lay-!odd_lay)-NUM_COLROW;
+      val.y += !(vdx.x&1)*((vdx.z&1)-!(vdx.z&1));
+      val.z += -1;
+      break;
+      //return vdx+!odd_col*(odd_lay-!odd_lay)-NUM_COLROW;
     case 8:
-      return vdx+NUM_ROW*(odd_lay-NUM_COL)+(odd_col&!odd_lay);
+      val.x += vdx.z&1;
+      val.y += ((vdx.x&1)&!(vdx.z&1));
+      val.z += -1;
+      break;
+      //return vdx+NUM_ROW*(odd_lay-NUM_COL)+(odd_col&!odd_lay);
     case 9:
-      return vdx+NUM_ROW*(NUM_COL-!odd_lay)-(odd_col&odd_lay);
+      val.x += -!(vdx.z&1);
+      val.y += -((vdx.x&1)&(vdx.z&1));
+      val.z += 1;
+      break;
+      //return vdx+NUM_ROW*(NUM_COL-!odd_lay)-(odd_col&odd_lay);
     case 10:
-      return vdx+NUM_COLROW+!odd_col*(odd_lay-!odd_lay);
+      val.y += !(vdx.x&1)*((vdx.z&1)-!(vdx.z&1));
+      val.z += 1;
+      break;
+      //return vdx+NUM_COLROW+!odd_col*(odd_lay-!odd_lay);
     case 11:
-      return vdx+NUM_ROW*(NUM_COL+odd_lay)+(odd_col&!odd_lay);
+      val.x += vdx.z&1;
+      val.y += ((vdx.x&1)&!(vdx.z&1));
+      val.z += 1;
+      break;
+      //return vdx+NUM_ROW*(NUM_COL+odd_lay)+(odd_col&!odd_lay);
     }
-  return vdx-1;
 }
 
 __global__
@@ -135,37 +173,21 @@ void concurrent_walk(
     const voxel_t id_stride_,
     const voxel_t vac_id_,
     const voxel_t null_id_,
-    const umol_t num_voxels_,
+    const uimol_t num_voxels_,
     umol_t* mols_) {
-  //index is the unique global thread id (size: total_threads)
   unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
   const unsigned total_threads(blockDim.x*gridDim.x);
   curandState local_state = curand_states[blockIdx.x][threadIdx.x];
   while(index < mol_size_) {
-    mols_[index] = curand(&local_state);
     const uint32_t rand32(curand(&local_state));
     uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
     uint32_t rand(((uint32_t)rand16*12) >> 16);
-    mols_[index] = rand;
-    /*
-    mol2_t val(get_tar(mols_[index], rand));
-    if(val < num_voxels_) {
-      mols_[index] = val;
-    }
-    */
-    //Do nothing, stay at original position
+    set_tar(mols_[index], rand);
     index += total_threads;
     if(index < mol_size_) {
       rand16 = (uint16_t)(rand32 >> 16);
       rand = ((uint32_t)rand16*12) >> 16;
-      mols_[index] = rand;
-      /*
-      mol2_t val(get_tar(mols_[index], rand));
-      if(val < num_voxels_) {
-        mols_[index] = val;
-      }
-      */
-      //Do nothing, stay at original position
+      set_tar(mols_[index], rand);
       index += total_threads;
     }
   }
@@ -183,6 +205,119 @@ void Diffuser::walk() {
       num_voxels_,
       thrust::raw_pointer_cast(&mols_[0]));
 }
+/* With uint3 as coord of mols: 2.9 BUPS
+
+__device__
+void set_tar(
+    umol_t& val,
+    const unsigned nrand) {
+  const umol_t vdx(val);
+  switch(nrand) {
+    case 0:
+        val.y += -1;
+      break;
+      //return vdx-1;
+    case 1:
+        val.y += 1;
+      break;
+      //return vdx+1;
+    case 2:
+      val.x += -1;
+      val.y += ((vdx.x&1)^(vdx.z&1))-1;
+      break;
+      //return vdx+(odd_col^odd_lay)-NUM_ROW-1 ;
+    case 3:
+      val.x += -1;
+      val.y += ((vdx.x&1)^(vdx.z&1));
+      break;
+      //return vdx+(odd_col^odd_lay)-NUM_ROW;
+    case 4:
+      val.x += 1;
+      val.y += ((vdx.x&1)^(vdx.z&1))-1;
+      break;
+      //return vdx+(odd_col^odd_lay)+NUM_ROW-1;
+    case 5:
+      val.x += 1;
+      val.y += ((vdx.x&1)^(vdx.z&1));
+      break;
+      //return vdx+(odd_col^odd_lay)+NUM_ROW;
+    case 6:
+      val.x += (vdx.z&1)-1;
+      val.y += -((vdx.x&1)&(vdx.z&1));
+      val.z += -1;
+      break;
+      //return vdx+NUM_ROW*(odd_lay-NUM_COL-1)-(odd_col&odd_lay);
+    case 7:
+      val.y += !(vdx.x&1)*((vdx.z&1)-!(vdx.z&1));
+      val.z += -1;
+      break;
+      //return vdx+!odd_col*(odd_lay-!odd_lay)-NUM_COLROW;
+    case 8:
+      val.x += vdx.z&1;
+      val.y += ((vdx.x&1)&!(vdx.z&1));
+      val.z += -1;
+      break;
+      //return vdx+NUM_ROW*(odd_lay-NUM_COL)+(odd_col&!odd_lay);
+    case 9:
+      val.x += -!(vdx.z&1);
+      val.y += -((vdx.x&1)&(vdx.z&1));
+      val.z += 1;
+      break;
+      //return vdx+NUM_ROW*(NUM_COL-!odd_lay)-(odd_col&odd_lay);
+    case 10:
+      val.y += !(vdx.x&1)*((vdx.z&1)-!(vdx.z&1));
+      val.z += 1;
+      break;
+      //return vdx+NUM_COLROW+!odd_col*(odd_lay-!odd_lay);
+    case 11:
+      val.x += vdx.z&1;
+      val.y += ((vdx.x&1)&!(vdx.z&1));
+      val.z += 1;
+      break;
+      //return vdx+NUM_ROW*(NUM_COL+odd_lay)+(odd_col&!odd_lay);
+    }
+}
+
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const uimol_t num_voxels_,
+    umol_t* mols_) {
+  unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
+  const unsigned total_threads(blockDim.x*gridDim.x);
+  curandState local_state = curand_states[blockIdx.x][threadIdx.x];
+  while(index < mol_size_) {
+    const uint32_t rand32(curand(&local_state));
+    uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
+    uint32_t rand(((uint32_t)rand16*12) >> 16);
+    set_tar(mols_[index], rand);
+    index += total_threads;
+    if(index < mol_size_) {
+      rand16 = (uint16_t)(rand32 >> 16);
+      rand = ((uint32_t)rand16*12) >> 16;
+      set_tar(mols_[index], rand);
+      index += total_threads;
+    }
+  }
+  curand_states[blockIdx.x][threadIdx.x] = local_state;
+}
+
+void Diffuser::walk() {
+  const size_t size(mols_.size());
+  concurrent_walk<<<blocks_, 256>>>(
+      size,
+      stride_,
+      id_stride_,
+      vac_id_,
+      null_id_,
+      num_voxels_,
+      thrust::raw_pointer_cast(&mols_[0]));
+}
+*/
 
 /* reduced global memory: 12.54 BUPS vs max 41.3 BUPS for rand generation
 __global__
