@@ -56,10 +56,10 @@ typedef uint32_t voxel_t;
 
 
 //Just change the int32_t, uint32_t, int64_t and uint64_t values to other bit sizes
-typedef int3 mol_t;
-typedef uint3 umol_t;
-typedef int3 mol2_t;
-typedef uint3 umol2_t;
+typedef int32_t mol_t;
+typedef uint32_t umol_t;
+typedef int32_t mol2_t;
+typedef uint32_t umol2_t;
 
 typedef int32_t imol_t;
 typedef uint32_t uimol_t;

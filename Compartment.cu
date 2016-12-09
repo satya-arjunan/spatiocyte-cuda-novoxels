@@ -100,18 +100,24 @@ void Compartment::set_volume_structure() {
 
 
 uimol_t Compartment::umol_to_uimol(const umol_t& umol) {
+  return umol;
+  /*
   return 
     umol.y + 
     umol.x*lattice_dimensions_.y + 
     umol.z*lattice_dimensions_.x*lattice_dimensions_.y;
+    */
 }
 
 umol_t Compartment::uimol_to_umol(const uimol_t& uimol) {
+  return uimol;
+  /*
   const unsigned xy(lattice_dimensions_.x*lattice_dimensions_.y);
   return make_uint3(
       uimol%xy/lattice_dimensions_.y,
       uimol%xy%lattice_dimensions_.y,
       uimol/xy);
+      */
 }
 
 

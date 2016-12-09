@@ -76,15 +76,19 @@ std::vector<Reaction*>& Species::get_reactions() {
 }
 
 __host__ __device__
-uimol_t umol_to_uimol(const umol_t& umol, const umol_t& dimensions) {
-  return umol.y + umol.x*dimensions.y + umol.z*dimensions.x*dimensions.y;
+uimol_t umol_to_uimol(const umol_t& umol, const uint3& dimensions) {
+  return umol;
+  //return umol.y + umol.x*dimensions.y + umol.z*dimensions.x*dimensions.y;
 }
 
 __host__ __device__
-umol_t uimol_to_umol(const uimol_t& uimol, const umol_t& dimensions) {
+umol_t uimol_to_umol(const uimol_t& uimol, const uint3& dimensions) {
+  return uimol;
+  /*
   const unsigned xy(dimensions.x*dimensions.y);
   //(cols, row, lay)
   return make_uint3(uimol%xy/dimensions.y, uimol%xy%dimensions.y, uimol/xy);
+  */
 }
 
 
