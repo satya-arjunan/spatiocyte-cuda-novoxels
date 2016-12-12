@@ -83,6 +83,205 @@ double Diffuser::get_D() const {
   return D_;
 }
 
+__device__
+unsigned get_tar(
+    const unsigned vdx,
+    const unsigned nrand) {
+  const bool odd_col((vdx%NUM_COLROW/NUM_ROW)&1);
+  const bool odd_lay((vdx/NUM_COLROW)&1);
+  switch(nrand)
+    {
+    case 1:
+      return vdx+1;
+    case 2:
+      return vdx+(odd_col^odd_lay)-NUM_ROW-1 ;
+    case 3:
+      return vdx+(odd_col^odd_lay)-NUM_ROW;
+    case 4:
+      return vdx+(odd_col^odd_lay)+NUM_ROW-1;
+    case 5:
+      return vdx+(odd_col^odd_lay)+NUM_ROW;
+    case 6:
+      return vdx+NUM_ROW*(odd_lay-NUM_COL-1)-(odd_col&odd_lay);
+    case 7:
+      return vdx+!odd_col*(odd_lay-!odd_lay)-NUM_COLROW;
+    case 8:
+      return vdx+NUM_ROW*(odd_lay-NUM_COL)+(odd_col&!odd_lay);
+    case 9:
+      return vdx+NUM_ROW*(NUM_COL-!odd_lay)-(odd_col&odd_lay);
+    case 10:
+      return vdx+NUM_COLROW+!odd_col*(odd_lay-!odd_lay);
+    case 11:
+      return vdx+NUM_ROW*(NUM_COL+odd_lay)+(odd_col&!odd_lay);
+    }
+  return vdx-1;
+}
+
+
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* mols_) {
+  //index is the unique global thread id (size: total_threads)
+  //unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
+  //const unsigned total_threads(blockDim.x*gridDim.x);
+  curandState local_state = curand_states[blockIdx.x][threadIdx.x];
+  const unsigned block_jobs(mol_size_/gridDim.x);
+  unsigned index(blockIdx.x*block_jobs);
+  //unsigned end_index((blockIdx.x+1)*838860 + (threadIdx.x+1)*3276);
+  unsigned end_index(index+block_jobs);
+  while(index < end_index) {
+    const uint32_t rand32(curand(&local_state));
+    uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
+    uint32_t rand(((uint32_t)rand16*12) >> 16);
+    mol2_t val(get_tar(mols_[index], rand));
+    if(val < num_voxels_) {
+      mols_[index] = val;
+    }
+    //Do nothing, stay at original position
+    //index += blockDim.x;
+    //if(index < end_index) {
+      rand16 = (uint16_t)(rand32 >> 16);
+      rand = ((uint32_t)rand16*12) >> 16;
+      val = get_tar(mols_[index], rand);
+      if(val < num_voxels_) {
+        mols_[index] = val;
+      }
+      //Do nothing, stay at original position
+      index += blockDim.x*2;
+    //}
+  }
+  curand_states[blockIdx.x][threadIdx.x] = local_state;
+}
+
+void Diffuser::walk() {
+  const size_t size(mols_.size());
+  concurrent_walk<<<64, 256>>>(
+      size,
+      stride_,
+      id_stride_,
+      vac_id_,
+      null_id_,
+      num_voxels_,
+      thrust::raw_pointer_cast(&mols_[0]));
+}
+
+/* Aligned mols_ access: 13.19 s
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* mols_) {
+  //index is the unique global thread id (size: total_threads)
+  //unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
+  //const unsigned total_threads(blockDim.x*gridDim.x);
+  curandState local_state = curand_states[blockIdx.x][threadIdx.x];
+  const unsigned block_jobs(mol_size_/gridDim.x);
+  unsigned index(blockIdx.x*block_jobs);
+  //unsigned end_index((blockIdx.x+1)*838860 + (threadIdx.x+1)*3276);
+  unsigned end_index(index+block_jobs);
+  while(index < end_index) {
+    const uint32_t rand32(curand(&local_state));
+    uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
+    uint32_t rand(((uint32_t)rand16*12) >> 16);
+    mol2_t val(get_tar(mols_[index], rand));
+    if(val < num_voxels_) {
+      mols_[index] = val;
+    }
+    //Do nothing, stay at original position
+    //index += blockDim.x;
+    //if(index < end_index) {
+      rand16 = (uint16_t)(rand32 >> 16);
+      rand = ((uint32_t)rand16*12) >> 16;
+      val = get_tar(mols_[index], rand);
+      if(val < num_voxels_) {
+        mols_[index] = val;
+      }
+      //Do nothing, stay at original position
+      index += blockDim.x*2;
+    //}
+  }
+  curand_states[blockIdx.x][threadIdx.x] = local_state;
+}
+
+void Diffuser::walk() {
+  const size_t size(mols_.size());
+  concurrent_walk<<<64, 256>>>(
+      size,
+      stride_,
+      id_stride_,
+      vac_id_,
+      null_id_,
+      num_voxels_,
+      thrust::raw_pointer_cast(&mols_[0]));
+}
+*/
+
+/* shared states: 13.18 BUPS
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* mols_) {
+  //index is the unique global thread id (size: total_threads)
+  //unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
+  //const unsigned total_threads(blockDim.x*gridDim.x);
+  __shared__ curandState local_state[256];
+  local_state[threadIdx.x] = curand_states[blockIdx.x][threadIdx.x];
+  const unsigned block_jobs(mol_size_/gridDim.x);
+  unsigned index(blockIdx.x*block_jobs);
+  //unsigned end_index((blockIdx.x+1)*838860 + (threadIdx.x+1)*3276);
+  unsigned end_index(index+block_jobs);
+  while(index < end_index) {
+    const uint32_t rand32(curand(&local_state[threadIdx.x]));
+    uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
+    uint32_t rand(((uint32_t)rand16*12) >> 16);
+    mol2_t val(get_tar(mols_[index], rand));
+    if(val < num_voxels_) {
+      mols_[index] = val;
+    }
+    //Do nothing, stay at original position
+    //index += blockDim.x;
+    //if(index < end_index) {
+      rand16 = (uint16_t)(rand32 >> 16);
+      rand = ((uint32_t)rand16*12) >> 16;
+      val = get_tar(mols_[index], rand);
+      if(val < num_voxels_) {
+        mols_[index] = val;
+      }
+      //Do nothing, stay at original position
+      index += blockDim.x*2;
+    //}
+  }
+  curand_states[blockIdx.x][threadIdx.x] = local_state[threadIdx.x];
+}
+
+void Diffuser::walk() {
+  const size_t size(mols_.size());
+  concurrent_walk<<<64, 256>>>(
+      size,
+      stride_,
+      id_stride_,
+      vac_id_,
+      null_id_,
+      num_voxels_,
+      thrust::raw_pointer_cast(&mols_[0]));
+}
+*/
+
 /* Reverted uint32_t for mol coord: 12.5 BUPS
 __device__
 unsigned get_tar(
