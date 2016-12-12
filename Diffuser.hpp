@@ -49,6 +49,7 @@ private:
   Species& species_;
   Compartment& compartment_;
   thrust::device_vector<umol_t>& mols_;
+  thrust::device_vector<mol_t>& offsets_;
   const voxel_t species_id_;
   const voxel_t vac_id_;
   const voxel_t null_id_;

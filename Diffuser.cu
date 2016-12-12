@@ -43,6 +43,7 @@ Diffuser::Diffuser(const double D, Species& species):
   D_(D),
   species_(species),
   compartment_(species_.get_compartment()),
+  offsets_(compartment_.get_offsets()),
   mols_(species_.get_mols()),
   blocks_(compartment_.get_model().get_blocks()),
   species_id_(species_.get_id()),
@@ -171,7 +172,7 @@ void Diffuser::walk() {
       thrust::raw_pointer_cast(&mols_[0]));
 }
 
-/* Aligned mols_ access: 13.19 s
+/* Aligned mols_ access: 13.19 BUPS
 __global__
 void concurrent_walk(
     const unsigned mol_size_,
