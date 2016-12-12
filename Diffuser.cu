@@ -144,18 +144,14 @@ void concurrent_walk(
     if(val < num_voxels_) {
       mols_[index] = val;
     }
-    //Do nothing, stay at original position
-    //index += blockDim.x;
-    //if(index < end_index) {
-      rand16 = (uint16_t)(rand32 >> 16);
-      rand = ((uint32_t)rand16*12) >> 16;
-      val = get_tar(mols_[index], rand);
-      if(val < num_voxels_) {
-        mols_[index] = val;
-      }
-      //Do nothing, stay at original position
-      index += blockDim.x*2;
-    //}
+    index += blockDim.x;
+    rand16 = (uint16_t)(rand32 >> 16);
+    rand = ((uint32_t)rand16*12) >> 16;
+    val = get_tar(mols_[index], rand);
+    if(val < num_voxels_) {
+      mols_[index] = val;
+    }
+    index += blockDim.x;
   }
   curand_states[blockIdx.x][threadIdx.x] = local_state;
 }
