@@ -62,6 +62,13 @@ private:
   thrust::device_vector<umol_t> reacteds_;
   thrust::device_vector<umol_t*> substrate_mols_;
   thrust::device_vector<umol_t*> product_mols_;
+  uint* m_dGridParticleHash;
+  uint* m_dGridParticleIndex;
+  uint* m_dCellStart;
+  uint* m_dCellEnd;
+  umol_t* m_dSortedMols;
+  umol_t* curr_mols;
+  umol_t* new_mols;
 };
 
 #endif /* __Diffuser_hpp */
