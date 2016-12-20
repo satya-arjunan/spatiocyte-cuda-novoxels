@@ -48,7 +48,8 @@ Diffuser::Diffuser(const double D, Species& species):
   blocks_(compartment_.get_model().get_blocks()),
   species_id_(species_.get_id()),
   vac_id_(species_.get_vac_id()),
-  null_id_(species_.get_model().get_null_id()) {
+  null_id_(species_.get_model().get_null_id()),
+  is_walked_(false) {
 }
 
 void Diffuser::initialize() {
@@ -196,9 +197,9 @@ void calcHashD(uint* gridParticleHash, uint* gridParticleIndex, umol_t* mols,
   if (index >= numParticles) return; 
   volatile umol_t pos = mols[index]; 
   uint3 gridPos = make_uint3(
-      pos%NUM_COLROW/NUM_ROW,
-      pos%NUM_COLROW%NUM_ROW,
-      pos/NUM_COLROW);
+      pos%NUM_COLROW/NUM_ROW, //col
+      pos%NUM_COLROW%NUM_ROW,//row
+      pos/NUM_COLROW); //layer
 
   uint hash = calcGridHash(gridPos); 
   // store grid hash and particle index
@@ -218,6 +219,48 @@ void concurrent_walk(
     const umol_t num_voxels_,
     umol_t* mols_) {
   //index is the unique global thread id (size: total_threads)
+  //unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
+  //const unsigned total_threads(blockDim.x*gridDim.x);
+  curandState local_state = curand_states[blockIdx.x][threadIdx.x];
+  const unsigned block_jobs(mol_size_/gridDim.x);
+  unsigned index(blockIdx.x*block_jobs);
+  //unsigned end_index((blockIdx.x+1)*838860 + (threadIdx.x+1)*3276);
+  unsigned end_index(index+block_jobs);
+  while(index < end_index) {
+    const uint32_t rand32(curand(&local_state));
+    uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
+    uint32_t rand(((uint32_t)rand16*12) >> 16);
+    mol2_t val(get_tar(mols_[index], rand));
+    if(val < num_voxels_) {
+      mols_[index] = val;
+    }
+    //Do nothing, stay at original position
+    //index += blockDim.x;
+    //if(index < end_index) {
+      rand16 = (uint16_t)(rand32 >> 16);
+      rand = ((uint32_t)rand16*12) >> 16;
+      val = get_tar(mols_[index], rand);
+      if(val < num_voxels_) {
+        mols_[index] = val;
+      }
+      //Do nothing, stay at original position
+      index += blockDim.x*2;
+    //}
+  }
+  curand_states[blockIdx.x][threadIdx.x] = local_state;
+}
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* mols_,
+    uint* gridParticleHash,
+    uint* gridParticleIndex) {
+  //index is the unique global thread id (size: total_threads)
   unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
   const unsigned total_threads(blockDim.x*gridDim.x);
   curandState local_state = curand_states[blockIdx.x][threadIdx.x];
@@ -230,6 +273,15 @@ void concurrent_walk(
     if(val < num_voxels_) {
       mols_[index] = val;
     }
+    unsigned vdx(mols_[index]);
+    uint3 gridPos = make_uint3(
+        vdx%NUM_COLROW/NUM_ROW, //col
+        vdx%NUM_COLROW%NUM_ROW,//row
+        vdx/NUM_COLROW); //layer
+    uint hash = calcGridHash(gridPos); 
+    // store grid hash and particle index
+    gridParticleHash[index] = hash;
+    gridParticleIndex[index] = index;
     //Do nothing, stay at original position
     index += total_threads;
     if(index < mol_size_) {
@@ -239,6 +291,15 @@ void concurrent_walk(
       if(val < num_voxels_) {
         mols_[index] = val;
       }
+      vdx = mols_[index];
+      gridPos = make_uint3(
+          vdx%NUM_COLROW/NUM_ROW, //col
+          vdx%NUM_COLROW%NUM_ROW,//row
+          vdx/NUM_COLROW); //layer
+      hash = calcGridHash(gridPos); 
+      // store grid hash and particle index
+      gridParticleHash[index] = hash;
+      gridParticleIndex[index] = index;
       //Do nothing, stay at original position
       index += total_threads;
     }
@@ -349,7 +410,28 @@ void reorderDataAndFindCellStartD(
   }
 }
 
+
+void Diffuser::walk_once() {
+  const size_t numParticles(mols_.size());
+  concurrent_walk<<<blocks_, 256>>>(
+      numParticles,
+      stride_,
+      id_stride_,
+      vac_id_,
+      null_id_,
+      num_voxels_,
+      curr_mols,
+      m_dGridParticleHash,
+      m_dGridParticleIndex);
+}
+
 void Diffuser::walk() {
+  /*
+  if(!is_walked_) {
+    walk_once();
+    is_walked_ = true;
+  }
+  */
   const size_t numParticles(mols_.size());
   uint numThreads, numBlocks;
   computeGridSize(numParticles, 256, numBlocks, numThreads);
@@ -360,15 +442,20 @@ void Diffuser::walk() {
       vac_id_,
       null_id_,
       num_voxels_,
-      curr_mols);
+      curr_mols,
+      m_dGridParticleHash,
+      m_dGridParticleIndex);
+  /*
   calcHashD<<< numBlocks, numThreads >>>(m_dGridParticleHash,
                                          m_dGridParticleIndex,
                                          curr_mols,
                                          numParticles); 
+                                         */
+  /*
   thrust::sort_by_key(
       thrust::device_ptr<uint>(m_dGridParticleHash),
       thrust::device_ptr<uint>(m_dGridParticleHash + numParticles),
-      thrust::device_ptr<uint>(m_dGridParticleIndex));
+      thrust::device_ptr<uint>(curr_mols));
 
 
   cudaMemset(m_dCellStart, 0xffffffff, 64*64*64*sizeof(uint));
@@ -384,6 +471,7 @@ void Diffuser::walk() {
   umol_t* tmp(curr_mols);
   curr_mols = new_mols;
   new_mols = tmp;
+  */
 }
 
 /* Bug fixed access: 12.5 BUPS

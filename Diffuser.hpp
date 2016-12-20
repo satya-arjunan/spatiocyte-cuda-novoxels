@@ -43,6 +43,7 @@ public:
   ~Diffuser() {}
   void initialize();
   void walk();
+  void walk_once();
   double get_D() const;
 private:
   const double D_;
@@ -69,6 +70,7 @@ private:
   umol_t* m_dSortedMols;
   umol_t* curr_mols;
   umol_t* new_mols;
+  bool is_walked_;
 };
 
 #endif /* __Diffuser_hpp */
