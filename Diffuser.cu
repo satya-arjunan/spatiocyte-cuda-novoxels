@@ -141,17 +141,17 @@ void concurrent_walk(
     const uint32_t rand32(curand(&local_state));
     uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
     uint32_t rand(((uint32_t)rand16*12) >> 16);
-    mol2_t val(get_tar(mols_[index], rand));
-    if(val < num_voxels_) {
-      mols_[index] = val;
-    }
+    //mol2_t val(get_tar(mols_[index], rand));
+    //if(val < num_voxels_) {
+      mols_[index] = rand;
+    //}
     index += blockDim.x;
     rand16 = (uint16_t)(rand32 >> 16);
     rand = ((uint32_t)rand16*12) >> 16;
-    val = get_tar(mols_[index], rand);
-    if(val < num_voxels_) {
-      mols_[index] = val;
-    }
+    //val = get_tar(mols_[index], rand);
+    //if(val < num_voxels_) {
+      mols_[index] = rand;
+    //}
     index += blockDim.x;
   }
   curand_states[blockIdx.x][threadIdx.x] = local_state;
