@@ -48,8 +48,7 @@ Diffuser::Diffuser(const double D, Species& species):
   blocks_(compartment_.get_model().get_blocks()),
   species_id_(species_.get_id()),
   vac_id_(species_.get_vac_id()),
-  null_id_(species_.get_model().get_null_id()),
-  is_walked_(false) {
+  null_id_(species_.get_model().get_null_id()) {
 }
 
 void Diffuser::initialize() {
@@ -64,15 +63,6 @@ void Diffuser::initialize() {
   const uint3& dimensions(compartment_.get_lattice_dimensions());
   num_voxels_ = dimensions.x*dimensions.y*dimensions.z;
 
-  const size_t numParticles(mols_.size());
-  cudaMalloc((void **)&m_dGridParticleHash, numParticles*sizeof(uint));
-  cudaMalloc((void **)&m_dGridParticleIndex, numParticles*sizeof(uint));
-  cudaMalloc((void **)&m_dCellStart, 64*64*64*sizeof(uint));
-  cudaMalloc((void **)&m_dCellEnd, 64*64*64*sizeof(uint));
-  cudaMalloc((void **)&m_dSortedMols, numParticles*sizeof(umol_t));
-  curr_mols = thrust::raw_pointer_cast(&mols_[0]);
-  new_mols = m_dSortedMols;
-  
   /*
   std::vector<Reaction*>& reactions(species_.get_reactions());
   for(unsigned i(0); i != reactions.size(); ++i) {
@@ -129,86 +119,7 @@ unsigned get_tar(
 }
 
 
-uint iDivUp(uint a, uint b) {
-  return (a % b != 0) ? (a / b + 1) : (a / b);
-} 
-
-void computeGridSize(uint n, uint blockSize, uint &numBlocks,
-    uint &numThreads) {
-  numThreads = std::min(blockSize, n);
-  numBlocks = iDivUp(n, numThreads);
-}
-
-
-/*
-__device__ int3 calcGridPos(float3 p) {
-  int3 gridPos;
-  gridPos.x = floor((p.x - params.worldOrigin.x) / params.cellSize.x);
-  gridPos.y = floor((p.y - params.worldOrigin.y) / params.cellSize.y);
-  gridPos.z = floor((p.z - params.worldOrigin.z) / params.cellSize.z);
-  return gridPos;
-}
-*/
-
-/*
-// calculate address in grid from position (clamping to edges)
-__device__ uint calcGridHash(int3 gridPos) {
-  // wrap grid, assumes size is power of 2
-  gridPos.x = gridPos.x & (params.gridSize.x-1);
-  gridPos.y = gridPos.y & (params.gridSize.y-1);
-  gridPos.z = gridPos.z & (params.gridSize.z-1);
-  return __umul24(__umul24(gridPos.z, params.gridSize.y), params.gridSize.x) +
-    __umul24(gridPos.y, params.gridSize.x) + gridPos.x;
-}
-*/
-
-// calculate address in grid from position (clamping to edges)
-__device__ uint calcGridHash(uint3 gridPos) {
-  // wrap grid, assumes size is power of 2
-  gridPos.x = gridPos.x & (63);
-  gridPos.y = gridPos.y & (63);
-  gridPos.z = gridPos.z & (63);
-  return
-    __umul24(__umul24(gridPos.z, 64), 64) +
-    __umul24(gridPos.y, 64) +
-    gridPos.x;
-}
-
-/*
-__global__
-void calcHashD(uint* gridParticleHash, uint* gridParticleIndex, float4 *pos,
-    uint numParticles) {
-  uint index = __umul24(blockIdx.x, blockDim.x) + threadIdx.x; 
-  if (index >= numParticles) return; 
-  volatile float4 p = pos[index]; 
-  // get address in grid
-  int3 gridPos = calcGridPos(make_float3(p.x, p.y, p.z));
-  uint hash = calcGridHash(gridPos); 
-  // store grid hash and particle index
-  gridParticleHash[index] = hash;
-  gridParticleIndex[index] = index;
-}
-*/
-
-__global__
-void calcHashD(uint* gridParticleHash, uint* gridParticleIndex, umol_t* mols,
-    uint numParticles) {
-  uint index = __umul24(blockIdx.x, blockDim.x) + threadIdx.x; 
-  if (index >= numParticles) return; 
-  volatile umol_t pos = mols[index]; 
-  uint3 gridPos = make_uint3(
-      pos%NUM_COLROW/NUM_ROW, //col
-      pos%NUM_COLROW%NUM_ROW,//row
-      pos/NUM_COLROW); //layer
-
-  uint hash = calcGridHash(gridPos); 
-  // store grid hash and particle index
-  gridParticleHash[index] = hash;
-  gridParticleIndex[index] = index;
-}
-
-
-
+// Bug fixed access: 12.5 BUPS
 __global__
 void concurrent_walk(
     const unsigned mol_size_,
@@ -234,247 +145,32 @@ void concurrent_walk(
     if(val < num_voxels_) {
       mols_[index] = val;
     }
-    //Do nothing, stay at original position
-    //index += blockDim.x;
-    //if(index < end_index) {
-      rand16 = (uint16_t)(rand32 >> 16);
-      rand = ((uint32_t)rand16*12) >> 16;
-      val = get_tar(mols_[index], rand);
-      if(val < num_voxels_) {
-        mols_[index] = val;
-      }
-      //Do nothing, stay at original position
-      index += blockDim.x*2;
-    //}
-  }
-  curand_states[blockIdx.x][threadIdx.x] = local_state;
-}
-__global__
-void concurrent_walk(
-    const unsigned mol_size_,
-    const voxel_t stride_,
-    const voxel_t id_stride_,
-    const voxel_t vac_id_,
-    const voxel_t null_id_,
-    const umol_t num_voxels_,
-    umol_t* mols_,
-    uint* gridParticleHash,
-    uint* gridParticleIndex) {
-  //index is the unique global thread id (size: total_threads)
-  unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
-  const unsigned total_threads(blockDim.x*gridDim.x);
-  curandState local_state = curand_states[blockIdx.x][threadIdx.x];
-  while(index < mol_size_) {
-    mols_[index] = curand(&local_state);
-    const uint32_t rand32(curand(&local_state));
-    uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
-    uint32_t rand(((uint32_t)rand16*12) >> 16);
-    mol2_t val(get_tar(mols_[index], rand));
+    index += blockDim.x;
+    rand16 = (uint16_t)(rand32 >> 16);
+    rand = ((uint32_t)rand16*12) >> 16;
+    val = get_tar(mols_[index], rand);
     if(val < num_voxels_) {
       mols_[index] = val;
     }
-    unsigned vdx(mols_[index]);
-    uint3 gridPos = make_uint3(
-        vdx%NUM_COLROW/NUM_ROW, //col
-        vdx%NUM_COLROW%NUM_ROW,//row
-        vdx/NUM_COLROW); //layer
-    uint hash = calcGridHash(gridPos); 
-    // store grid hash and particle index
-    gridParticleHash[index] = hash;
-    gridParticleIndex[index] = index;
-    //Do nothing, stay at original position
-    index += total_threads;
-    if(index < mol_size_) {
-      rand16 = (uint16_t)(rand32 >> 16);
-      rand = ((uint32_t)rand16*12) >> 16;
-      mol2_t val(get_tar(mols_[index], rand));
-      if(val < num_voxels_) {
-        mols_[index] = val;
-      }
-      vdx = mols_[index];
-      gridPos = make_uint3(
-          vdx%NUM_COLROW/NUM_ROW, //col
-          vdx%NUM_COLROW%NUM_ROW,//row
-          vdx/NUM_COLROW); //layer
-      hash = calcGridHash(gridPos); 
-      // store grid hash and particle index
-      gridParticleHash[index] = hash;
-      gridParticleIndex[index] = index;
-      //Do nothing, stay at original position
-      index += total_threads;
-    }
+    index += blockDim.x;
   }
   curand_states[blockIdx.x][threadIdx.x] = local_state;
 }
 
-/*
-__global__
-void reorderDataAndFindCellStartD(
-    uint   *cellStart,        // output: cell start index
-    uint   *cellEnd,          // output: cell end index
-    float4 *sortedPos,        // output: sorted positions
-    float4 *sortedVel,        // output: sorted velocities
-    uint   *gridParticleHash, // input: sorted grid hashes
-    uint   *gridParticleIndex,// input: sorted particle indices
-    float4 *oldPos,           // input: sorted position array
-    float4 *oldVel,           // input: sorted velocity array
-    uint    numParticles) {
-  extern __shared__ uint sharedHash[];    // blockSize + 1 elements
-  uint index = __umul24(blockIdx.x,blockDim.x) + threadIdx.x; 
-  uint hash; 
-  // handle case when no. of particles not multiple of block size
-  if (index < numParticles) {
-    hash = gridParticleHash[index]; 
-    // Load hash data into shared memory so that we can look
-    // at neighboring particle's hash value without loading
-    // two hash values per thread
-    sharedHash[threadIdx.x+1] = hash; 
-    if (index > 0 && threadIdx.x == 0) {
-      // first thread in block must load neighbor particle hash
-      sharedHash[0] = gridParticleHash[index-1];
-    }
-  } 
-  __syncthreads(); 
-  if (index < numParticles) {
-    // If this particle has a different cell index to the previous
-    // particle then it must be the first particle in the cell,
-    // so store the index of this particle in the cell.
-    // As it isn't the first particle, it must also be the cell end of
-    // the previous particle's cell 
-    if (index == 0 || hash != sharedHash[threadIdx.x]) {
-      cellStart[hash] = index; 
-      if (index > 0)
-        cellEnd[sharedHash[threadIdx.x]] = index;
-    }
-    if (index == numParticles - 1) {
-      cellEnd[hash] = index + 1;
-    } 
-    // Now use the sorted index to reorder the pos and vel data
-    uint sortedIndex = gridParticleIndex[index];
-    float4 pos = FETCH(oldPos, sortedIndex);
-    // macro does either global read or texture fetch
-    float4 vel = FETCH(oldVel, sortedIndex);  
-    // see particles_kernel.cuh 
-    sortedPos[index] = pos;
-    sortedVel[index] = vel;
-  }
-}
-*/
-
-// rearrange particle data into sorted order, and find the start of each cell
-// in the sorted hash array
-__global__
-void reorderDataAndFindCellStartD(
-    uint   *cellStart,        // output: cell start index
-    uint   *cellEnd,          // output: cell end index
-    umol_t *sorted_mols,      // output: sorted velocities
-    uint   *gridParticleHash, // input: sorted grid hashes
-    uint   *gridParticleIndex,// input: sorted particle indices
-    umol_t *mols,             // input: sorted position array
-    uint    numParticles) {
-  extern __shared__ uint sharedHash[];    // blockSize + 1 elements
-  uint index = __umul24(blockIdx.x,blockDim.x) + threadIdx.x; 
-  uint hash; 
-  // handle case when no. of particles not multiple of block size
-  if (index < numParticles) {
-    hash = gridParticleHash[index]; 
-    // Load hash data into shared memory so that we can look
-    // at neighboring particle's hash value without loading
-    // two hash values per thread
-    sharedHash[threadIdx.x+1] = hash; 
-    if (index > 0 && threadIdx.x == 0) {
-      // first thread in block must load neighbor particle hash
-      sharedHash[0] = gridParticleHash[index-1];
-    }
-  } 
-  __syncthreads(); 
-  if (index < numParticles) {
-    // If this particle has a different cell index to the previous
-    // particle then it must be the first particle in the cell,
-    // so store the index of this particle in the cell.
-    // As it isn't the first particle, it must also be the cell end of
-    // the previous particle's cell 
-    if (index == 0 || hash != sharedHash[threadIdx.x]) {
-      cellStart[hash] = index; 
-      if (index > 0)
-        cellEnd[sharedHash[threadIdx.x]] = index;
-    }
-    if (index == numParticles - 1) {
-      cellEnd[hash] = index + 1;
-    } 
-    // Now use the sorted index to reorder the pos and vel data
-    uint sortedIndex = gridParticleIndex[index];
-    umol_t pos = mols[sortedIndex];
-    // see particles_kernel.cuh 
-    sorted_mols[index] = pos;
-  }
-}
-
-
-void Diffuser::walk_once() {
-  const size_t numParticles(mols_.size());
-  concurrent_walk<<<blocks_, 256>>>(
-      numParticles,
-      stride_,
-      id_stride_,
-      vac_id_,
-      null_id_,
-      num_voxels_,
-      curr_mols,
-      m_dGridParticleHash,
-      m_dGridParticleIndex);
-}
-
 void Diffuser::walk() {
-  /*
-  if(!is_walked_) {
-    walk_once();
-    is_walked_ = true;
-  }
-  */
-  const size_t numParticles(mols_.size());
-  uint numThreads, numBlocks;
-  computeGridSize(numParticles, 256, numBlocks, numThreads);
-  concurrent_walk<<<blocks_, 256>>>(
-      numParticles,
+  const size_t size(mols_.size());
+  concurrent_walk<<<64, 256>>>(
+      size,
       stride_,
       id_stride_,
       vac_id_,
       null_id_,
       num_voxels_,
-      curr_mols,
-      m_dGridParticleHash,
-      m_dGridParticleIndex);
-  /*
-  calcHashD<<< numBlocks, numThreads >>>(m_dGridParticleHash,
-                                         m_dGridParticleIndex,
-                                         curr_mols,
-                                         numParticles); 
-                                         */
-  /*
-  thrust::sort_by_key(
-      thrust::device_ptr<uint>(m_dGridParticleHash),
-      thrust::device_ptr<uint>(m_dGridParticleHash + numParticles),
-      thrust::device_ptr<uint>(curr_mols));
-
-
-  cudaMemset(m_dCellStart, 0xffffffff, 64*64*64*sizeof(uint));
-  uint smemSize = sizeof(uint)*(numThreads+1);
-  reorderDataAndFindCellStartD<<< numBlocks, numThreads, smemSize>>>(
-      m_dCellStart,
-      m_dCellEnd,
-      new_mols,
-      m_dGridParticleHash,
-      m_dGridParticleIndex,
-      curr_mols,
-      numParticles);
-  umol_t* tmp(curr_mols);
-  curr_mols = new_mols;
-  new_mols = tmp;
-  */
+      thrust::raw_pointer_cast(&mols_[0]));
 }
 
-/* Bug fixed access: 12.5 BUPS
+/*
+// Bug fixed access: 12.5 BUPS
 __global__
 void concurrent_walk(
     const unsigned mol_size_,
