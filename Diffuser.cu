@@ -303,6 +303,37 @@ void concurrent_walk(
 */
 
 
+//Aligned with uint16 rand with mols=rand (theoretical max): 34.2 BUPS
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* mols_) {
+  curandState local_state = curand_states[blockIdx.x][threadIdx.x];
+  const unsigned block_jobs(mol_size_/gridDim.x);
+  unsigned index(blockIdx.x*block_jobs);
+  const unsigned end_index(index+block_jobs);
+  index += threadIdx.x;
+  while(index < end_index) {
+    const uint32_t rand32(curand(&local_state));
+    uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
+    uint32_t rand(((uint32_t)rand16*12) >> 16);
+    mols_[index] = rand;
+    index += blockDim.x;
+    if(index < end_index) {
+      rand16 = (uint16_t)(rand32 >> 16);
+      rand = ((uint32_t)rand16*12) >> 16;
+      mols_[index] = rand;
+      index += blockDim.x;
+    }
+  }
+  curand_states[blockIdx.x][threadIdx.x] = local_state;
+}
+
 void Diffuser::walk() {
   const size_t size(mols_.size());
   concurrent_walk<<<64, 256>>>(
@@ -316,8 +347,8 @@ void Diffuser::walk() {
 }
 
 
-
-//Correct num mols with uint16 rand with mols=rand (theoretical max): 36.4 BUPS
+/*
+//Aligned with uint16 rand with mols=rand (theoretical max): 34.2 BUPS
 __global__
 void concurrent_walk(
     const unsigned mol_size_,
@@ -327,28 +358,30 @@ void concurrent_walk(
     const voxel_t null_id_,
     const umol_t num_voxels_,
     umol_t* mols_) {
-  //index is the unique global thread id (size: total_threads)
-  unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
-  const unsigned total_threads(blockDim.x*gridDim.x);
   curandState local_state = curand_states[blockIdx.x][threadIdx.x];
-  while(index < mol_size_) {
+  const unsigned block_jobs(mol_size_/gridDim.x);
+  unsigned index(blockIdx.x*block_jobs);
+  const unsigned end_index(index+block_jobs);
+  index += threadIdx.x;
+  while(index < end_index) {
     const uint32_t rand32(curand(&local_state));
     uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
     uint32_t rand(((uint32_t)rand16*12) >> 16);
     mols_[index] = rand;
-    index += total_threads;
-    if(index < mol_size_) {
+    index += blockDim.x;
+    if(index < end_index) {
       rand16 = (uint16_t)(rand32 >> 16);
       rand = ((uint32_t)rand16*12) >> 16;
       mols_[index] = rand;
-      index += total_threads;
+      index += blockDim.x;
     }
   }
   curand_states[blockIdx.x][threadIdx.x] = local_state;
 }
+*/
 
 /*
-//Correct num mols with uint16 rand with mols=rand (theoretical max): 36.4 BUPS
+//Correct num mols with uint16 rand with mols=rand (theoretical max): 39.4 BUPS
 __global__
 void concurrent_walk(
     const unsigned mol_size_,
