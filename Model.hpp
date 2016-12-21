@@ -36,6 +36,7 @@
 #include <Compartment.hpp>
 #include <Stepper.hpp>
 #include <thrust/device_vector.h>
+#include <curand_kernel.h>
 #include <curand.h>
 #include <sstream>
 

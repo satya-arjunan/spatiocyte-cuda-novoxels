@@ -118,7 +118,7 @@ unsigned get_tar(
   return vdx-1;
 }
 
-
+/*
 // Complete and correct shared offsets: 35.8 BUPS
 __global__
 void concurrent_walk(
@@ -193,7 +193,7 @@ void concurrent_walk(
   //const unsigned total_threads(blockDim.x*gridDim.x);
   curandState local_state = curand_states[blockIdx.x][threadIdx.x];
   const unsigned block_jobs(mol_size_/gridDim.x);
-  unsigned index(blockIdx.x*block_jobs);
+  unsigned index(blockIdx.x*block_jobs+threadIdx.x);
   //unsigned end_index((blockIdx.x+1)*838860 + (threadIdx.x+1)*3276);
   unsigned end_index(index+block_jobs);
   while(index < end_index) {
@@ -201,21 +201,107 @@ void concurrent_walk(
     uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
     uint32_t rand(((uint32_t)rand16*12) >> 16);
     umol_t vdx(mols_[index]);
-    bool odd_lay((vdx/NUM_COLROW)&1);
-    bool odd_col((vdx%NUM_COLROW/NUM_ROW)&1);
-    mols_[index] = mol2_t(vdx)+offsets_[rand+(24&(-odd_lay))+(12&(-odd_col))];
+    //bool odd_lay((vdx/NUM_COLROW)&1);
+    //bool odd_col((vdx%NUM_COLROW/NUM_ROW)&1);
+    mols_[index] = mol2_t(vdx)+offsets_[rand];//+(24&(-odd_lay))];//+(12&(-odd_col))];
 
     index += blockDim.x;
     rand16 = (uint16_t)(rand32 >> 16);
     rand = ((uint32_t)rand16*12) >> 16;
     vdx = mols_[index];
-    odd_lay = (vdx/NUM_COLROW)&1;
-    odd_col = (vdx%NUM_COLROW/NUM_ROW)&1;
-    mols_[index] = mol2_t(vdx)+offsets_[rand+(24&(-odd_lay))+(12&(-odd_col))];
+    //odd_lay = (vdx/NUM_COLROW)&1;
+    //odd_col = (vdx%NUM_COLROW/NUM_ROW)&1;
+    mols_[index] = mol2_t(vdx)+offsets_[rand];//+(24&(-odd_lay))];//+(12&(-odd_col))];
     index += blockDim.x;
   }
   curand_states[blockIdx.x][threadIdx.x] = local_state;
 }
+*/
+
+
+/*
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* mols_) {
+  //index is the unique global thread id (size: total_threads)
+  //unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
+  //const unsigned total_threads(blockDim.x*gridDim.x);
+  __shared__ curandState local_state[256];
+  local_state[threadIdx.x] = curand_states[blockIdx.x][threadIdx.x];
+  const unsigned block_jobs(mol_size_/gridDim.x);
+  unsigned index(blockIdx.x*block_jobs+threadIdx.x);
+  //unsigned end_index((blockIdx.x+1)*838860 + (threadIdx.x+1)*3276);
+  unsigned end_index(index+block_jobs);
+  while(index < end_index) {
+    const uint32_t rand32(curand(&local_state[threadIdx.x]));
+    uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
+    uint32_t rand(((uint32_t)rand16*12) >> 16);
+    mol2_t val(get_tar(mols_[index], rand));
+    if(val < num_voxels_) {
+      mols_[index] = val;
+    }
+    //Do nothing, stay at original position
+    index += blockDim.x;
+    //if(index < end_index) {
+      rand16 = (uint16_t)(rand32 >> 16);
+      rand = ((uint32_t)rand16*12) >> 16;
+      val = get_tar(mols_[index], rand);
+      if(val < num_voxels_) {
+        mols_[index] = val;
+      }
+      //Do nothing, stay at original position
+      index += blockDim.x;
+    //}
+  }
+  curand_states[blockIdx.x][threadIdx.x] = local_state[threadIdx.x];
+}
+*/
+
+/*
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* mols_) {
+  //index is the unique global thread id (size: total_threads)
+  unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
+  const unsigned total_threads(blockDim.x*gridDim.x);
+  curandState local_state = curand_states[blockIdx.x][threadIdx.x];
+  while(index < mol_size_) {
+    const uint32_t rand32(curand(&local_state));
+    uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
+    uint32_t rand(((uint32_t)rand16*12) >> 16);
+    mol2_t val(get_tar(mols_[index], rand));
+    if(val < num_voxels_) {
+      mols_[index] = val;
+    }
+    //Do nothing, stay at original position
+    index += total_threads;
+    if(index < mol_size_) {
+      rand16 = (uint16_t)(rand32 >> 16);
+      rand = ((uint32_t)rand16*12) >> 16;
+      mol2_t val(get_tar(mols_[index], rand));
+      if(val < num_voxels_) {
+        mols_[index] = val;
+      }
+      //Do nothing, stay at original position
+      index += total_threads;
+    }
+  }
+  curand_states[blockIdx.x][threadIdx.x] = local_state;
+}
+*/
+
 
 void Diffuser::walk() {
   const size_t size(mols_.size());
@@ -228,6 +314,126 @@ void Diffuser::walk() {
       num_voxels_,
       thrust::raw_pointer_cast(&mols_[0]));
 }
+
+
+
+//Correct num mols with uint16 rand with mols=rand (theoretical max): 36.4 BUPS
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* mols_) {
+  //index is the unique global thread id (size: total_threads)
+  unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
+  const unsigned total_threads(blockDim.x*gridDim.x);
+  curandState local_state = curand_states[blockIdx.x][threadIdx.x];
+  while(index < mol_size_) {
+    const uint32_t rand32(curand(&local_state));
+    uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
+    uint32_t rand(((uint32_t)rand16*12) >> 16);
+    mols_[index] = rand;
+    index += total_threads;
+    if(index < mol_size_) {
+      rand16 = (uint16_t)(rand32 >> 16);
+      rand = ((uint32_t)rand16*12) >> 16;
+      mols_[index] = rand;
+      index += total_threads;
+    }
+  }
+  curand_states[blockIdx.x][threadIdx.x] = local_state;
+}
+
+/*
+//Correct num mols with uint16 rand with mols=rand (theoretical max): 36.4 BUPS
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* mols_) {
+  //index is the unique global thread id (size: total_threads)
+  unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
+  const unsigned total_threads(blockDim.x*gridDim.x);
+  curandState local_state = curand_states[blockIdx.x][threadIdx.x];
+  while(index < mol_size_) {
+    const uint32_t rand32(curand(&local_state));
+    uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
+    uint32_t rand(((uint32_t)rand16*12) >> 16);
+    mols_[index] = rand;
+    index += total_threads;
+    if(index < mol_size_) {
+      rand16 = (uint16_t)(rand32 >> 16);
+      rand = ((uint32_t)rand16*12) >> 16;
+      mols_[index] = rand;
+      index += total_threads;
+    }
+  }
+  curand_states[blockIdx.x][threadIdx.x] = local_state;
+}
+
+*/
+
+/*
+//Correct num mols with uint32 rand with mols=rand (theoretical max): 26.9 BUPS
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* mols_) {
+  //index is the unique global thread id (size: total_threads)
+  unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
+  const unsigned total_threads(blockDim.x*gridDim.x);
+  curandState local_state = curand_states[blockIdx.x][threadIdx.x];
+  while(index < mol_size_) {
+    float ranf(curand_uniform(&local_state)*11.999999);
+    const unsigned rand((unsigned)truncf(ranf));
+    mols_[index] = rand;
+    index += total_threads;
+  }
+  curand_states[blockIdx.x][threadIdx.x] = local_state;
+}
+*/
+
+/*
+//Correct num mols with uint32 rand: 11.4 BUPS
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* mols_) {
+  //index is the unique global thread id (size: total_threads)
+  unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
+  const unsigned total_threads(blockDim.x*gridDim.x);
+  curandState local_state = curand_states[blockIdx.x][threadIdx.x];
+  while(index < mol_size_) {
+    const umol_t vdx(mols_[index]);
+    float ranf(curand_uniform(&local_state)*11.999999);
+    const unsigned rand((unsigned)truncf(ranf));
+    mol2_t val(get_tar(vdx, rand));
+    if(val < num_voxels_) {
+      mols_[index] = val;
+    }
+    //Do nothing, stay at original position
+    index += total_threads;
+  }
+  curand_states[blockIdx.x][threadIdx.x] = local_state;
+}
+*/
 
 /*
 // Complete and correct shared offsets: 35.8 BUPS
