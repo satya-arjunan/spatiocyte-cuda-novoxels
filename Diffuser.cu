@@ -59,7 +59,7 @@ void Diffuser::initialize() {
   reactions_.resize(model.get_species().size(), NULL);
   //substrate_mols_.resize(model.get_species().size(), NULL);
   //product_mols_.resize(model.get_species().size(), NULL);
-  //reacteds_.resize(mols_.size()+1, 0);
+  reacteds_.resize(mols_.size(), 0);
   const uint3& dimensions(compartment_.get_lattice_dimensions());
   num_voxels_ = dimensions.x*dimensions.y*dimensions.z;
 
@@ -126,7 +126,8 @@ void concurrent_walk(
     const voxel_t vac_id_,
     const voxel_t null_id_,
     const umol_t num_voxels_,
-    umol_t* mols_) {
+    umol_t* __restrict__ reacteds_,
+    umol_t* __restrict__ mols_) {
   //index is the unique global thread id (size: total_threads)
   unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
   const unsigned total_threads(blockDim.x*gridDim.x);
@@ -138,7 +139,7 @@ void concurrent_walk(
     uint32_t rand(((uint32_t)rand16*12) >> 16);
     mols_[index] += rand;
     */
-    mols_[index] += threadIdx.x;
+    reacteds_[index] = __ldg(&mols_[index]) + threadIdx.x;
     index += total_threads;
     /*
     if(index < mol_size_) {
@@ -169,7 +170,8 @@ void Diffuser::walk() {
       vac_id_,
       null_id_,
       num_voxels_,
-      thrust::raw_pointer_cast(&mols_[0]));
+      thrust::raw_pointer_cast(&mols_[0]),
+      thrust::raw_pointer_cast(&reacteds_[0]));
   cudaDeviceSynchronize();
   /*
   cudaEventRecord(stopEvent,0);
@@ -178,6 +180,44 @@ void Diffuser::walk() {
   printf("%f GB/s\n", 2*(sizeof(umol_t)*size/(1024*1024))/ms);
   */
 }
+
+/*
+//With __ldg: 20.5265 BUPS, 152.934 GB/s, 26155 ms
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* __restrict__ reacteds_,
+    umol_t* __restrict__ mols_) {
+  //index is the unique global thread id (size: total_threads)
+  unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
+  const unsigned total_threads(blockDim.x*gridDim.x);
+  //curandState local_state = curand_states[blockIdx.x][threadIdx.x];
+  while(index < mol_size_) {
+    reacteds_[index] = __ldg(&mols_[index]) + threadIdx.x;
+    index += total_threads;
+  }
+  //curand_states[blockIdx.x][threadIdx.x] = local_state;
+}
+
+void Diffuser::walk() {
+  const size_t size(mols_.size());
+  concurrent_walk<<<size/256, 256>>>(
+      size,
+      stride_,
+      id_stride_,
+      vac_id_,
+      null_id_,
+      num_voxels_,
+      thrust::raw_pointer_cast(&mols_[0]),
+      thrust::raw_pointer_cast(&reacteds_[0]));
+  cudaDeviceSynchronize();
+}
+*/
 
 /*
 //Correct with offsets: 17.8 BUPS
