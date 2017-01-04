@@ -172,7 +172,7 @@ void concurrent_walk(
   int stride = gridDim.x * blockDim.x;
   int tid = blockDim.x * blockIdx.x + threadIdx.x;
   for (int i = tid; i < mol_size_; i += stride) {
-    reacteds_[i] = mols_[i];
+    mols_[i] = mols_[i] + tid;
   }
 }
 
@@ -205,20 +205,52 @@ void Diffuser::walk() {
       (2.0e-9*sizeof(umol_t)*size)/(ave));
 }
 
-
 /*
-void Diffuser::walk() {
-  const size_t size(mols_.size());
-  concurrent_walk<<<size/256, 256>>>(
-      size,
-      stride_,
-      id_stride_,
-      vac_id_,
-      null_id_,
-      num_voxels_,
-      thrust::raw_pointer_cast(&mols_[0]),
-      thrust::raw_pointer_cast(&reacteds_[0]));
-  cudaDeviceSynchronize();
+//concurrent_walk: max = 168 GB/s, average 163 GB/s
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* __restrict__ reacteds_,
+    umol_t* __restrict__ mols_) {
+  int stride = gridDim.x * blockDim.x;
+  int tid = blockDim.x * blockIdx.x + threadIdx.x;
+  for (int i = tid; i < mol_size_; i += stride) {
+    mols_[i] = mols_[i] + tid;
+  }
+}
+
+void Diffuser::walk() { 
+  double start, stop;
+  double mintime = fabs(log(0.0));
+  const size_t size(mols_.size()); 
+  double ave(0);
+  int iters(10000);
+  for (int k = 0; k < iters; k++) {
+    start = second();
+    concurrent_walk<<<size/256, 256>>>(
+        size,
+        stride_,
+        id_stride_,
+        vac_id_,
+        null_id_,
+        num_voxels_,
+        thrust::raw_pointer_cast(&mols_[0]),
+        thrust::raw_pointer_cast(&reacteds_[0]));
+    cudaThreadSynchronize();
+    stop = second(); 
+    double elapsed = stop - start;
+    ave += elapsed;
+    if (elapsed < mintime) mintime = elapsed;
+  }
+  ave /= iters;
+  printf("max = %.2f ave = %.2f GB/sec\n", 
+      (2.0e-9*sizeof(umol_t)*size)/(mintime),
+      (2.0e-9*sizeof(umol_t)*size)/(ave));
 }
 */
 
