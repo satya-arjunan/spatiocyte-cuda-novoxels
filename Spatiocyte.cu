@@ -37,7 +37,7 @@
 
 int main() {
   Model model;
-  Species A("A", 53687091, 1e-12, model, model.get_compartment(),
+  Species A("A", 20000000, 1e-12, model, model.get_compartment(),
             model.get_compartment().get_volume_species());
   /*
   Species B("B", 800256, 1e-12, model, model.get_compartment(),
@@ -68,11 +68,11 @@ int main() {
   */
 
 
-  model.run(0.0001);
+  model.step(1);
   boost::posix_time::ptime start(
       boost::posix_time::microsec_clock::universal_time()); 
   //model.run(0.1);
-  unsigned steps(10000);
+  unsigned steps(1);
   //unsigned steps(model.run(0.5));
   model.step(steps);
   cudaDeviceSynchronize();
