@@ -72,7 +72,7 @@ int main() {
   boost::posix_time::ptime start(
       boost::posix_time::microsec_clock::universal_time()); 
   //model.run(0.1);
-  unsigned steps(1000);
+  unsigned steps(10000);
   //unsigned steps(model.run(0.5));
   model.step(steps);
   cudaDeviceSynchronize();
@@ -81,6 +81,7 @@ int main() {
   boost::posix_time::time_duration duration(end-start);
   double bups((A.get_mols().size())*steps/
                (duration.total_milliseconds()/1000.0));
-  std::cout << "duration:" << duration << " BUPS:" << bups/1e+9 <<
-    " msecs:" << duration.total_milliseconds() << std::endl;
+  std::cout <<  bups/1e+9 << " BUPS, " << 
+    bups*sizeof(umol_t)*2/(1024*1024*1024) <<
+    " GB/s, " << duration.total_milliseconds() << " ms" << std::endl;
 }
