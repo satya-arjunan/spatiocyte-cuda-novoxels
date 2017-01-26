@@ -183,6 +183,7 @@ void concurrent_walk(
 
 void Diffuser::walk() {
   const size_t size(mols_.size());
+  thrust::sort(thrust::device, mols_.begin(), mols_.end());
   concurrent_walk<<<blocks_, 256>>>(
       size,
       stride_,
@@ -192,6 +193,7 @@ void Diffuser::walk() {
       num_voxels_,
       thrust::raw_pointer_cast(&mols_[0]));
   cudaDeviceSynchronize();
+
 }
 
 /*
