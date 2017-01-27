@@ -71,7 +71,7 @@ void Model::initialize() {
 //Setup the default XORWOW generator:
 __global__
 void setup_kernel() {
-  int id = threadIdx.x + blockIdx.x * 256;
+  int id = threadIdx.x + blockIdx.x*blockDim.x;
   if(threadIdx.x == 0) {
     curand_states[blockIdx.x] = 
       (curandState*)malloc(blockDim.x*sizeof(curandState));
@@ -81,7 +81,7 @@ void setup_kernel() {
 }
 
 void Model::initialize_random_generator() {
-  setup_kernel<<<blocks_, 256>>>();
+  setup_kernel<<<blocks_, 512>>>();
 }
 
 unsigned& Model::get_blocks() {
