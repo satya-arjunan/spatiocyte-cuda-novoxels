@@ -54,6 +54,7 @@ private:
   const voxel_t vac_id_;
   const voxel_t null_id_;
   unsigned& blocks_;
+  unsigned cnt_;
   voxel_t stride_;
   voxel_t id_stride_;
   uimol_t num_voxels_;

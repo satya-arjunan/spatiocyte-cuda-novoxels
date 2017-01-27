@@ -46,6 +46,7 @@ Diffuser::Diffuser(const double D, Species& species):
   offsets_(compartment_.get_offsets()),
   mols_(species_.get_mols()),
   blocks_(compartment_.get_model().get_blocks()),
+  cnt_(0),
   species_id_(species_.get_id()),
   vac_id_(species_.get_vac_id()),
   null_id_(species_.get_model().get_null_id()) {
@@ -153,6 +154,7 @@ void concurrent_walk(
     offsets_[46] = NUM_COLROW;
     offsets_[47] = NUM_COLROW+NUM_ROW;
   }
+  __shared__ unsigned vdx[256];
   __syncthreads();
   //index is the unique global thread id (size: total_threads)
   unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
@@ -162,28 +164,19 @@ void concurrent_walk(
     const uint32_t rand32(curand(&local_state));
     uint16_t rand16((uint16_t)(rand32 & 0x0000FFFFuL));
     uint32_t rand(((uint32_t)rand16*12) >> 16);
-    umol_t vdx(mols_[index]);
-    bool odd_lay((vdx/NUM_COLROW)&1);
-    bool odd_col((vdx%NUM_COLROW/NUM_ROW)&1);
-    mols_[index] = mol2_t(vdx)+offsets_[rand+(24&(-odd_lay))+(12&(-odd_col))];
-
+    vdx[threadIdx.x] = mols_[index];
+    bool odd_lay((vdx[threadIdx.x]/NUM_COLROW)&1);
+    bool odd_col((vdx[threadIdx.x]%NUM_COLROW/NUM_ROW)&1);
+    mols_[index] = mol2_t(vdx[threadIdx.x])+
+      offsets_[rand+(24&(-odd_lay))+(12&(-odd_col))];
     index += total_threads;
-    if(index < mol_size_) {
-      rand16 = (uint16_t)(rand32 >> 16);
-      rand = ((uint32_t)rand16*12) >> 16;
-      vdx = mols_[index];
-      odd_lay = (vdx/NUM_COLROW)&1;
-      odd_col = (vdx%NUM_COLROW/NUM_ROW)&1;
-      mols_[index] = mol2_t(vdx)+offsets_[rand+(24&(-odd_lay))+(12&(-odd_col))];
-      index += total_threads;
-    }
+    __syncthreads();
   }
   curand_states[blockIdx.x][threadIdx.x] = local_state;
 }
 
 void Diffuser::walk() {
   const size_t size(mols_.size());
-  thrust::sort(thrust::device, mols_.begin(), mols_.end());
   concurrent_walk<<<blocks_, 256>>>(
       size,
       stride_,
