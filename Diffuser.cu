@@ -171,27 +171,11 @@ void concurrent_walk(
     tars[threadIdx.x] = mol2_t(vdx[threadIdx.x])+
       offsets_[rand+(24&(-odd_lay))+(12&(-odd_col))];
     __syncthreads();
-    for(uint i = 1; i < 256; i++) {
-      uint key_i = tars[i]; 
-      sFlags[threadIdx.x] = 0; 
-      uint temp;
-      if( (threadIdx.x < i) && (tars[threadIdx.x] > key_i) ) {
-        temp = tars[threadIdx.x];
-        sFlags[threadIdx.x] = 1;
-        tars[threadIdx.x + 1] = temp;
-        sFlags[threadIdx.x + 1] = 0;
-      }
-      if(sFlags[threadIdx.x] == 1 ) {
-        tars[threadIdx.x] = key_i;
-      }
-    }
-    /*
     for(unsigned i(0); i != 10; ++i) {
       if(tars[i] == tars[threadIdx.x]) {
         tars[i] = vdx[i];
           }
         }
-        */
     __syncthreads();
     mols_[index] = tars[threadIdx.x];
     index += total_threads;
