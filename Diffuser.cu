@@ -153,8 +153,9 @@ void concurrent_walk(
     offsets_[46] = NUM_COLROW;
     offsets_[47] = NUM_COLROW+NUM_ROW;
   }
-  __shared__ unsigned vdx[512];
-  __shared__ unsigned tars[512];
+  volatile __shared__ unsigned vdx[256];
+  volatile __shared__ unsigned tars[256];
+  volatile __shared__ uint sFlags[256];
   __syncthreads();
   //index is the unique global thread id (size: total_threads)
   unsigned index(blockIdx.x*blockDim.x + threadIdx.x);
@@ -170,11 +171,27 @@ void concurrent_walk(
     tars[threadIdx.x] = mol2_t(vdx[threadIdx.x])+
       offsets_[rand+(24&(-odd_lay))+(12&(-odd_col))];
     __syncthreads();
-    for(unsigned i(0); i != 20; ++i) {
-      if(tars[i] == tars[threadIdx.x]) {
-        tars[i] = vdx[i];
+    for(uint i = 1; i < 256; i++) {
+      uint key_i = tars[i]; 
+      sFlags[threadIdx.x] = 0; 
+      uint temp;
+      if( (threadIdx.x < i) && (tars[threadIdx.x] > key_i) ) {
+        temp = tars[threadIdx.x];
+        sFlags[threadIdx.x] = 1;
+        tars[threadIdx.x + 1] = temp;
+        sFlags[threadIdx.x + 1] = 0;
+      }
+      if(sFlags[threadIdx.x] == 1 ) {
+        tars[threadIdx.x] = key_i;
       }
     }
+    /*
+    for(unsigned i(0); i != 10; ++i) {
+      if(tars[i] == tars[threadIdx.x]) {
+        tars[i] = vdx[i];
+          }
+        }
+        */
     __syncthreads();
     mols_[index] = tars[threadIdx.x];
     index += total_threads;
@@ -185,7 +202,7 @@ void concurrent_walk(
 
 void Diffuser::walk() {
   const size_t size(mols_.size());
-  concurrent_walk<<<blocks_, 512>>>(
+  concurrent_walk<<<blocks_, 256>>>(
       size,
       stride_,
       id_stride_,
