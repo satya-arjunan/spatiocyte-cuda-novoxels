@@ -109,7 +109,8 @@ void concurrent_walk(
   int stride = gridDim.x * blockDim.x;
   int tid = blockDim.x * blockIdx.x + threadIdx.x;
   for (int i = tid; i < mol_size_; i += stride) {
-    mols_[i] = mols_[i] + tid;
+    reacteds_[i] = mols_[i] + tid;
+    mols_[i] = tid;
   }
 }
 
@@ -137,9 +138,11 @@ void Diffuser::walk() {
     if (elapsed < mintime) mintime = elapsed;
   }
   ave /= iters;
-  printf("max = %.2f ave = %.2f GB/sec\n", 
+  printf("max = %.2f ave = %.2f GB/sec, maxGUPS = %.2f, aveGUPS = %.2f\n", 
       (2.0e-9*sizeof(umol_t)*size)/(mintime),
-      (2.0e-9*sizeof(umol_t)*size)/(ave));
+      (2.0e-9*sizeof(umol_t)*size)/(ave),
+      size/mintime/(1024*1024*1024),
+      size/ave/(1024*1024*1024));
 }
 
 
