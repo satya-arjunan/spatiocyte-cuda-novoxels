@@ -81,7 +81,7 @@ void setup_kernel() {
 }
 
 void Model::initialize_random_generator() {
-  setup_kernel<<<blocks_, 512>>>();
+  setup_kernel<<<blocks_, 256>>>();
 }
 
 unsigned& Model::get_blocks() {

@@ -170,6 +170,7 @@ void concurrent_walk(
     bool odd_col((vdx[threadIdx.x]%NUM_COLROW/NUM_ROW)&1);
     tars[threadIdx.x] = mol2_t(vdx[threadIdx.x])+
       offsets_[rand+(24&(-odd_lay))+(12&(-odd_col))];
+    /*
     __syncthreads();
     for(unsigned i(0); i != 10; ++i) {
       if(tars[i] == tars[threadIdx.x]) {
@@ -177,6 +178,7 @@ void concurrent_walk(
           }
         }
     __syncthreads();
+    */
     mols_[index] = tars[threadIdx.x];
     index += total_threads;
     __syncthreads();

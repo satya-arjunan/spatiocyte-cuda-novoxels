@@ -38,12 +38,20 @@
 
 #define HCP_X double(VOXEL_RADIUS*1.732050807568877)
 #define HCP_Z double(VOXEL_RADIUS*1.632993161855452)
-#define NUM_COL imol_t(LENGTH_X/HCP_X+3)
-#define NUM_LAY imol_t(LENGTH_Z/HCP_Z+3)
-#define NUM_ROW imol_t(LENGTH_Y/VOXEL_RADIUS/2+3)
-#define NUM_COLROW imol_t(NUM_COL*NUM_ROW)
-#define NUM_COLROWROW uimol_t(uimol_t(NUM_COLROW)*NUM_ROW)
-#define NUM_VOXEL uimol_t(uimol_t(NUM_COLROW)*NUM_LAY)
+
+#ifndef NUM_COL 
+#define NUM_COL mol_t(LENGTH_X/HCP_X+3)
+#define NUM_LAY mol_t(LENGTH_Z/HCP_Z+3)
+#define NUM_ROW mol_t(LENGTH_Y/VOXEL_RADIUS/2+3)
+#else
+#define LENGTH_X NUM_COL*double(VOXEL_RADIUS*1.732050807568877) //ncol
+#define LENGTH_Y NUM_ROW*2*double(VOXEL_RADIUS) //nrow
+#define LENGTH_Z NUM_LAY*double(VOXEL_RADIUS*1.632993161855452) //nlay
+#endif
+
+#define NUM_COLROW mol_t(NUM_COL*NUM_ROW)
+#define NUM_COLROWROW umol_t(umol_t(NUM_COLROW)*NUM_ROW)
+#define NUM_VOXEL umol_t(umol_t(NUM_COLROW)*NUM_LAY)
 
 class Compartment { 
  public: 
