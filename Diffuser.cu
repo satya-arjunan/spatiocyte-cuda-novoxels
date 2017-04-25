@@ -85,8 +85,7 @@ double Diffuser::get_D() const {
   return D_;
 }
 
-//concurrent_walk: max = 168 GB/s, average 163 GB/s
-//concurrent_walk: max = 384 GB/s, average 372 GB/s
+//concurrent_walk: max = 29.5 GUPS, average 29.1 GUPS
 #include <stddef.h>
 #include <sys/time.h>
 double second (void)
@@ -141,9 +140,70 @@ void Diffuser::walk() {
   printf("max = %.2f ave = %.2f GB/sec, maxGUPS = %.2f, aveGUPS = %.2f\n", 
       (2.0e-9*sizeof(umol_t)*size)/(mintime),
       (2.0e-9*sizeof(umol_t)*size)/(ave),
-      size/mintime/(1024*1024*1024),
-      size/ave/(1024*1024*1024));
+      size/mintime/1e+9,
+      size/ave/1e+9);
 }
+
+/*
+//concurrent_walk: max = 29.5 GUPS, average 29.1 GUPS
+#include <stddef.h>
+#include <sys/time.h>
+double second (void)
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (double)tv.tv_sec + (double)tv.tv_usec * 1.0e-6;
+}
+
+__global__
+void concurrent_walk(
+    const unsigned mol_size_,
+    const voxel_t stride_,
+    const voxel_t id_stride_,
+    const voxel_t vac_id_,
+    const voxel_t null_id_,
+    const umol_t num_voxels_,
+    umol_t* __restrict__ reacteds_,
+    umol_t* __restrict__ mols_) {
+  int stride = gridDim.x * blockDim.x;
+  int tid = blockDim.x * blockIdx.x + threadIdx.x;
+  for (int i = tid; i < mol_size_; i += stride) {
+    reacteds_[i] = mols_[i] + tid;
+    mols_[i] = tid;
+  }
+}
+
+void Diffuser::walk() { 
+  double start, stop;
+  double mintime = fabs(log(0.0));
+  const size_t size(mols_.size()); 
+  double ave(0);
+  int iters(1000);
+  for (int k = 0; k < iters; k++) {
+    start = second();
+    concurrent_walk<<<size/1024, 1024>>>(
+        size,
+        stride_,
+        id_stride_,
+        vac_id_,
+        null_id_,
+        num_voxels_,
+        thrust::raw_pointer_cast(&mols_[0]),
+        thrust::raw_pointer_cast(&reacteds_[0]));
+    cudaThreadSynchronize();
+    stop = second(); 
+    double elapsed = stop - start;
+    ave += elapsed;
+    if (elapsed < mintime) mintime = elapsed;
+  }
+  ave /= iters;
+  printf("max = %.2f ave = %.2f GB/sec, maxGUPS = %.2f, aveGUPS = %.2f\n", 
+      (2.0e-9*sizeof(umol_t)*size)/(mintime),
+      (2.0e-9*sizeof(umol_t)*size)/(ave),
+      size/mintime/1e+9,
+      size/ave/1e+9);
+}
+*/
 
 
 /*
