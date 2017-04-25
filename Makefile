@@ -16,7 +16,8 @@ LDFLAGS = # -L$(HOME)/root/lib -lRandom
 #CXXFLAGS = -O3 -march=native -mavx -Werror -Wfatal-errors -Wall -std=c++0x #-fprofile-use #-pg -fprofile-generate
 #CXXFLAGS = -O3 -march=core-avx2 -Wfatal-errors -Wall -std=c++0x #-fprofile-use #-pg -fprofile-generate
 CXXFLAGS = -O3 -std=c++11 #-fprofile-use #-pg -fprofile-generate
-CXXEFLAGS = -arch=compute_53 -lcurand
+#CXXEFLAGS = -arch=compute_53 -lcurand
+CXXEFLAGS = -gencode arch=compute_60,code=sm_60 -lcurand -lcuda
 CUFLAGS = -dc
 #CXX = icc
 #CXX = g++
